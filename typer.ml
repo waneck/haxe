@@ -449,7 +449,7 @@ let unify_min ctx el =
 		if not ctx.untyped then display_error ctx (error_msg (Unify l)) p;
 		(List.hd el).etype
 
-let rec unify_call_params ctx ?(overloads=None) cf el args r p inline =
+let rec unify_call_params ctx ?(overloads=None) cf el args r p inline : Type.texpr list * Type.t * Type.tclass_field option =
   (* 'overloads' will carry a ( return_result ) list, called 'compatible' *)
   (* it's used to correctly support an overload selection algorithm *)
 	let overloads, compatible, legacy = match cf, overloads with
@@ -465,6 +465,7 @@ let rec unify_call_params ctx ?(overloads=None) cf el args r p inline =
 				s
 		| _ -> [], [], true
 	in
+	let cur_cf = Option.map snd cf in
 	let next ?retval () =
 		let compatible = Option.map_default (fun r -> r :: compatible) compatible retval in
 		match cf, overloads with
@@ -485,17 +486,17 @@ let rec unify_call_params ctx ?(overloads=None) cf el args r p inline =
 		| _ ->
 			match compatible with
 			| [] -> None
-			| [acc,t] -> Some (List.map fst acc, t)
+			| [acc,t,cur_cf] -> Some (List.map fst acc, t, cur_cf)
 			| comp ->
 				match Codegen.Overloads.reduce_compatible compatible with
-				| [acc,t] -> Some (List.map fst acc, t)
-				| (acc,t) :: _ -> (* ambiguous overload *)
+				| [acc,t,cur_cf] -> Some (List.map fst acc, t, cur_cf)
+				| (acc,t,cur_cf) :: _ -> (* ambiguous overload *)
 					let name = match cf with | Some(_,f) -> "'" ^ f.cf_name ^ "' " | _ -> "" in
-					let format_amb = String.concat "\n" (List.map (fun (_,t) ->
+					let format_amb = String.concat "\n" (List.map (fun (_,t,_) ->
 						"Function " ^ name ^ "with type " ^ (s_type (print_context()) t)
 					) compatible) in
 					display_error ctx ("This call is ambiguous between the following methods:\n" ^ format_amb) p;
-					Some (List.map fst acc,t)
+					Some (List.map fst acc,t,cur_cf)
 				| [] -> None
 	in
 	let fun_details() =
@@ -507,7 +508,7 @@ let rec unify_call_params ctx ?(overloads=None) cf el args r p inline =
 		| Some l -> l
 		| None ->
 		display_error ctx (txt ^ " arguments\n" ^ (fun_details())) p;
-		List.rev (List.map fst acc), (TFun(args,r))
+		List.rev (List.map fst acc), (TFun(args,r)), cur_cf
 	in
 	let arg_error ul name opt p =
 		match next() with
@@ -536,13 +537,13 @@ let rec unify_call_params ctx ?(overloads=None) cf el args r p inline =
 				List.rev (acc), (TFun(args,r))
 			in
 			if not legacy && ctx.com.config.pf_overload then
-				match next ~retval:(args,tf) () with
+				match next ~retval:(args,tf,cur_cf) () with
 				| Some l -> l
 				| None ->
 					display_error ctx ("No overloaded function matches the arguments. Are the arguments correctly typed?") p;
-					List.map fst args, tf
+					List.map fst args, tf, cur_cf
 			else
-				List.map fst args, tf
+				List.map fst args, tf, cur_cf
 		| [] , (_,false,_) :: _ ->
 			error (List.fold_left (fun acc (_,_,t) -> default_value t :: acc) acc l2) "Not enough"
 		| [] , (name,true,t) :: l ->
@@ -1379,7 +1380,7 @@ let type_generic_function ctx (e,cf) el ?(using_param=None) p =
 		| TFun(args,ret),None -> args,ret
 		| _ ->  error "Invalid field type for generic call" p
 	in
-	let el,_ = unify_call_params ctx None el args ret p false in
+	let el,_,cfo = unify_call_params ctx None el args ret p false in
 	let el = match using_param with None -> el | Some e -> e :: el in
 	(try
 		let gctx = Codegen.make_generic ctx cf.cf_params monos p in

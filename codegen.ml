@@ -2093,7 +2093,7 @@ struct
 
 	let rec rm_duplicates acc ret = match ret with
 		| [] -> acc
-		| ( el, t ) :: ret when List.exists (fun (_,t2) -> type_iseq t t2) acc ->
+		| ( el, t, _ ) :: ret when List.exists (fun (_,t2,_) -> type_iseq t t2) acc ->
 			rm_duplicates acc ret
 		| r :: ret ->
 			rm_duplicates (r :: acc) ret
@@ -2109,7 +2109,7 @@ struct
 	let rec fewer_optionals acc compatible = match acc, compatible with
 		| _, [] -> acc
 		| [], c :: comp -> fewer_optionals [c] comp
-		| (elist_acc, _) :: _, ((elist, _) as cur) :: comp ->
+		| (elist_acc, _, _) :: _, ((elist, _, _) as cur) :: comp ->
 			let acc_opt = count_optionals elist_acc in
 			let comp_opt = count_optionals elist in
 			if acc_opt = comp_opt then
@@ -2133,8 +2133,8 @@ struct
 
 			let rated = ref [] in
 			List.iter (function
-				| (elist,TFun(args,ret)) -> (try
-					rated := ( (elist,TFun(args,ret)), mk_rate [] elist args ) :: !rated
+				| (elist,TFun(args,ret), cf) -> (try
+					rated := ( (elist,TFun(args,ret),cf), mk_rate [] elist args ) :: !rated
 					with | Not_found ->  ())
 				| _ -> assert false
 			) compatible;
