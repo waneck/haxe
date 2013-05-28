@@ -206,6 +206,25 @@ class TestOverloads extends Test
 		eq(child.s, "test");
 		eq(child.someField(child), null);
 	}
+
+
+	public function testOverloadAccess()
+	{
+		//issue #1856
+		var acc = new OverloadAccess1("test", 1);
+		t(acc.publicFunctionUsed);
+		acc.publicFunctionUsed = false;
+		acc.test("test2", 2);
+		t(acc.publicFunctionUsed);
+
+		//private should be filtered
+		var acc2 = new OverloadAccess1("test");
+		t(acc.publicFunctionUsed);
+		acc.publicFunctionUsed = false;
+		acc.test("test2");
+		t(acc.publicFunctionUsed);
+
+	}
 }
 
 private class Primitives
@@ -617,3 +636,34 @@ interface OverloadedInterface extends NormalInterface
 	@:overload function someField(f:Float):Int;
 }
 
+
+class OverloadAccess1
+{
+	public var publicFunctionUsed:Bool;
+
+	@:overload private function new(s:String):Void
+	{
+	}
+
+	@:overload public function new(s:String, ?i:Int):Void
+	{
+		publicFunctionUsed = true;
+	}
+
+	@:overload private function new(s:Dynamic):Void
+	{
+	}
+
+	@:overload private function test(s:String):Void
+	{
+	}
+
+	@:overload public function test(s:String, ?i:Int):Void
+	{
+		publicFunctionUsed = true;
+	}
+
+	@:overload public function test(s:Dynamic)
+	{
+	}
+}
