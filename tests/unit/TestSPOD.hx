@@ -133,6 +133,19 @@ class TestSPOD extends Test
 			c.delete();
 	}
 
+	public function testBytes()
+	{
+		var other1 = new OtherSpodClass("required field");
+		other1.insert();
+		var c1 = getDefaultClass();
+		c1.relation = other1;
+		c1.insert();
+		var c2 = getDefaultClass();
+		c2.relation = other2;
+		c2.insert();
+
+	}
+
 	public function testDateQuery()
 	{
 		var other1 = new OtherSpodClass("required field");
