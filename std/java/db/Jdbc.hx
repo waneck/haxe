@@ -55,8 +55,13 @@ private class JdbcConnection implements sys.db.Connection
 	{
 		if (Std.is(v, Date))
 		{
-			var d:Date = v;
-			v = new java.sql.Date(cast(d.getTime(), haxe.Int64));
+			if (dbName() == "SQLite")
+			{
+				v = Std.string(v);
+			} else {
+				var d:Date = v;
+				v = new java.sql.Date(cast(d.getTime(), haxe.Int64));
+			}
 		} else if (Std.is(v, Bytes)) {
 			var bt:Bytes = v;
 			v = bt.getData();
@@ -144,12 +149,12 @@ private class JdbcConnection implements sys.db.Connection
 				stmt.setObject(i + 1, sentArray[i]);
 			}
 
-			var ret = null;
+			var ret = null, dbName = dbName();
 			if (stmt.execute())
 			{
 				//is a result set
 				var rs = stmt.getResultSet();
-				ret = new JdbcResultSet(rs, stmt.getMetaData());
+				ret = new JdbcResultSet(rs, dbName, stmt.getMetaData());
 			} else {
 				//is an update
 				var affected = stmt.getUpdateCount();
@@ -161,7 +166,7 @@ private class JdbcConnection implements sys.db.Connection
 						this._lastInsertId = autogen.getInt(1);
 					}
 				}
-				ret = new JdbcResultSet(null,null);
+				ret = new JdbcResultSet(null, dbName,null);
 			}
 
 			if (escapes.length != 0)
@@ -189,9 +194,11 @@ private class JdbcResultSet implements sys.db.ResultSet
 	private var rs:java.sql.ResultSet;
 	private var names:Array<String>;
 	private var types:java.NativeArray<Int>;
+	private var dbName:String;
 
-	public function new(rs, meta:java.sql.ResultSetMetaData)
+	public function new(rs, dbName, meta:java.sql.ResultSetMetaData)
 	{
+		this.dbName = dbName;
 		this.rs = rs;
 		if (meta != null)
 		{
@@ -228,7 +235,11 @@ private class JdbcResultSet implements sys.db.ResultSet
 
 	public function hasNext() : Bool
 	{
-		return rs != null && rs.next();
+		try
+		{
+			return rs != null && rs.next();
+		}
+		catch(e:Dynamic) { return throw e; }
 	}
 
 	public function next() : Dynamic
@@ -243,8 +254,14 @@ private class JdbcResultSet implements sys.db.ResultSet
 				{
 					val = rs.getDouble(i+1);
 				} else if (t == Types.DATE || t == Types.TIME) {
-					var d:java.sql.Date = rs.getDate(i+1);
-					val = Date.fromTime(cast d.getTime());
+					if (dbName == "SQLite")
+					{
+						var d:Date = Date.fromString(rs.getString(i+1));
+						val = d;
+					} else {
+						var d:java.sql.Date = rs.getDate(i+1);
+						val = Date.fromTime(cast d.getTime());
+					}
 				} else if (t == Types.LONGVARBINARY || t == Types.VARBINARY || t == Types.BINARY || t == Types.BLOB) {
 					var b = rs.getBytes(i+1);
 					val = Bytes.ofData(b);
