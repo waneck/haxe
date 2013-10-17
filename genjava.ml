@@ -1904,9 +1904,9 @@ let configure gen =
   fun e ->
     match e.eexpr with
       | TArray(e1, e2) ->
-        ( match run_follow gen e1.etype with
+        ( match run_follow gen (follow e1.etype) with
           | TInst({ cl_path = (["java"], "NativeArray") }, _) -> false
-          | _ -> true )
+					| _ ->  true )
       | _ -> assert false
   ) "__get" "__set" );
 

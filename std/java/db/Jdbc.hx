@@ -294,7 +294,11 @@ private class JdbcResultSet implements sys.db.ResultSet
 
 	public function getIntResult( n : Int ) : Int
 	{
-		return rs.getInt(n);
+		try
+		{
+			return rs.getInt(n);
+		}
+		catch(e:Dynamic) { return throw e; };
 	}
 
 	public function getFloatResult( n : Int ) : Float
