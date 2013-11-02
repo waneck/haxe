@@ -33,7 +33,7 @@ EXPORT=../../../projects/motionTools/haxe
 
 MODULES=ast type lexer common genxml parser typecore optimizer typeload \
 codegen gencommon genas3 gencpp genjs genneko genphp genswf8 \
-	genswf9 genswf genjava gencs interp typer matcher dce version main gencommonType
+	genswf9 genswf genjava gencs interp typer matcher dce version main flags gencommonType
 
 ADD_REVISION=0
 
@@ -136,7 +136,11 @@ matcher.cmx: optimizer.cmx codegen.cmx typecore.cmx type.cmx typer.cmx common.cm
 
 main.cmx: dce.cmx matcher.cmx typer.cmx typeload.cmx typecore.cmx type.cmx parser.cmx optimizer.cmx lexer.cmx interp.cmx genxml.cmx genswf.cmx genphp.cmx genneko.cmx genjs.cmx gencpp.cmx genas3.cmx common.cmx codegen.cmx ast.cmx gencommon.cmx genjava.cmx gencs.cmx version.cmx
 
-gencommonType.cmx: type.cmx common.cmx codegen.cmx ast.cmx
+gencommonType.cmx: flags.cmx type.cmx common.cmx codegen.cmx ast.cmx
+
+flags.cmx: flags.cmi
+
+flags.cmi: flags.mli
 
 optimizer.cmx: typecore.cmx type.cmx parser.cmx common.cmx ast.cmx
 

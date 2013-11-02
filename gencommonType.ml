@@ -54,11 +54,13 @@ and pos = Ast.pos
 
 and t = {
 	ctype : ctype;
+	cextra : unit option; (* extra flags about the type *)
 }
 
 and cparams = t list
 
 and callconv =
+	| GenericFunc
 	| None
 
 and expr =
@@ -66,9 +68,10 @@ and expr =
 	| Local of var
 	| Cast of expr * t
 
-	| Field of expr * tfield_access
-	| Static of tfield_access
+	| FieldAcc of expr * tfield_access
+	| StaticAcc of tfield_access
 	| Call of expr * expr_pos list
+	| ArrayAcc of expr * expr
 
 	| IfVal of expr * expr_pos * expr_pos
 	| Binop of Ast.binop * expr * expr * pos
@@ -153,6 +156,7 @@ and fkind =
 	| KMethod of func
 
 and path = string list * string list * string
+	(* package * nested types * name *)
 
 and cls = {
 	mutable tpath : path;
