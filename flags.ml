@@ -46,3 +46,5 @@ let has_any this vl =
 
 let from_list vl =
 	List.fold_left (fun ret v -> set ret v) 0 vl
+
+let (|+) this v = set this v

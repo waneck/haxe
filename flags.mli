@@ -40,3 +40,5 @@ val has_all : ('a) t -> ('a) list -> bool
 val has_any : ('a) t -> ('a) list -> bool
 
 val from_list : ('a) list -> ('a) t
+
+val (|+) : ('a) t -> 'a -> ('a) t
