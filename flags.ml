@@ -24,7 +24,7 @@ type ('a) t = int
 
 let empty = 0
 
-let tag (v : 'a) : int = 1 lsl (Obj.magic v + 1)
+let tag (v : 'a) : int = 1 lsl (Obj.magic v)
 
 let is_empty this = this = 0
 

@@ -20,6 +20,7 @@
  * DEALINGS IN THE SOFTWARE.
  *)
 open Type;;
+open Flags;;
 
 (* typed AST used by Gencommon *)
 (* its main purpose is to be much closer to what the statically typed target can understand *)
@@ -45,7 +46,7 @@ and ctype =
 	| Vector of ctype
 	| Array of ctype
 	| Null of valuetype
-	| Fun of callconv list * ctype * (ctype list)
+	| Fun of callconv Flags.t * ctype * (ctype list)
 	| Type of ctype (* Class<> *)
 	| Inst of cls * cparams
 	| Value of valuetype
@@ -140,13 +141,15 @@ and tparam = {
 and field = {
 	fid : int;
 	mutable fname : string;
+	mutable fpublic : bool;
+		(* declared public? *)
+	mutable fvis : visibility Flags.t;
+		(* actual (computed) visibility *)
 	mutable ftype : t;
 	mutable fstatic : bool;
 	mutable foverrides : field option;
 	mutable fkind : fkind;
-	(* flags *)
-	mutable fconstant : bool; (* strict: if on, optimizations can be performed *)
-	mutable fextern : bool;
+	mutable fflags : fflag Flags.t;
 }
 
 and fkind =
@@ -154,6 +157,20 @@ and fkind =
 	| KVarProp of bool * bool (* read, write *)
 	| KProp of bool * bool (* read, write *)
 	| KMethod of func
+
+and visibility =
+	| VPublic
+	| VInternal
+	| VNested
+	| VProtected
+	| VPrivate
+
+and fflag =
+	| FPure (* strict: if on, optimizations can be performed *)
+		(* it means that it's a pure read-only value, so the order in which it's called *)
+		(* doesn't matter, and results can be cached *)
+	| FExtern
+		(* extern field: it doesn't really exist *)
 
 and path = string list * string list * string
 	(* package * nested types * name *)
