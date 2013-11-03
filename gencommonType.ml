@@ -66,7 +66,7 @@ and t = {
 	cextra : unit option; (* extra flags about the type *)
 }
 
-and cparams = t list
+and cparams = t array
 
 and funprop =
 	| GenericFunc
@@ -126,6 +126,7 @@ and const =
 	| B of bool
 	| Nil (* null *)
 	| This
+	| Class of cls
 	| Super
 
 and stat_t =
@@ -227,6 +228,7 @@ and path = string list * string list * string
 
 and cls = {
 	mutable tpath : path;
+	mutable ttypes : tparam array;
 	mutable tsuper : (cls * cparams) option;
 	mutable tord_fields : field list;
 	mutable tfields : (string, field) PMap.t;
@@ -235,6 +237,15 @@ and cls = {
 	(* "private" fields: DO NOT change them without calling the proper change function *)
 	mutable tenclosing : cls option;
 	mutable tnested : cls list;
+}
+
+type gen = {
+	gcom : Common.context;
+
+	mutable gfield : field;
+		(* current class field running *)
+	mutable gcur : cls;
+		(* current class being mapped *)
 }
 
 (* all expression helpers go here *)
@@ -248,26 +259,36 @@ struct
 		cextra = None;
 	}
 
-	(* expression operators. read as 'expr with' *)
-	(* constructs expressions from expr_expr and a tuple of type and position *)
-	(* which can in turn be generated with +@ *)
-	let ($) e (t,p) = mk e t p
-	(* read as 'expr with type' *)
-	let ($:) e (t,p) = mk e (mkt t) p
+	let mkt_vt vt = {
+		ctype = Value vt;
+		cextra = None;
+	}
 
-	(* type and position binding operator *)
-	(* read as 'and at': constructs a tuple from its operators *)
-	(* it has lower precedence than 'expr with' operators *)
-	let (+@) t p = (t,p)
+	type typed_expr = expr_expr * t
 
-	(* mkt unary *)
-	let (!:) = mkt
+	(* position operator. read as 'at pos' *)
+	(* constructs expressions from typed_expr and the position *)
+	let (@@) (e,t) p = mk e t p
 
-	let sample_expr p =
-		Binop(OpAdd, Const(S"Hello, ") $: String +@ p, Const(S"World!") $: String +@ p) $: String +@ p
+	(* pair creation operator *)
+	let (++) e t = (e, t)
+
+	(* typed expression operator. read as 'typed with type' *)
+	let (+:) e t = (e, mkt t)
+
+	(* value type unary *)
+	let (!%) t = Value t
+
+	let sample_expr p : expr =
+		Binop(OpAdd, Const(S"Hello, ") +: String @@ p, Const(S"World!") +: String @@ p) +: String @@ p
+
+	let mkcls_params cls =
+		Array.init (Array.length cls.ttypes) (fun i -> mkt !%(TypeParam i))
+
+	let mkthis gen = match gen.gfield.fstatic with
+	| true ->
+		Const(Class gen.gcur) +: Type gen.gcur
+	| false ->
+		Const This +: Inst(gen.gcur, mkcls_params gen.gcur)
 
 end;;
-
-type gen = {
-	gcom : Common.context;
-}
