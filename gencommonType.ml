@@ -21,10 +21,15 @@
  *)
 open Type;;
 open Flags;;
+open Ast;;
 
 (* typed AST used by Gencommon *)
 (* its main purpose is to be much closer to what the statically typed target can understand *)
-(* it also is designed to generate less garbage on filters, and allow optimizations to happen *)
+(* it also is designed to: *)
+	(* generate less garbage on filters *)
+	(* allow optimizations to happen *)
+	(* make it easier (and cleaner) to generate new expressions *)
+
 type valuetype =
 	(* any type that has a simplified form should not be referred using the longer cls * cparams form *)
 	| Void
@@ -91,33 +96,43 @@ and intrinsic =
 	| ICustom of string
 
 and expr_expr =
-	| Const of tconstant (* p *)
+	| Const of const
 	| Local of var
-	| Cast of expr * t (* p *)
+	| Cast of expr * t
 
 	| FieldAcc of expr * tfield_access
 	| StaticAcc of tfield_access
-	| Call of expr * expr list (* p *)
+	| Call of expr * expr list
 	| ArrayAcc of expr * expr
 
 	| IfVal of expr * expr * expr
-	| Binop of Ast.binop * expr * expr
-	| Unop of Ast.unop * Ast.unop_flag * expr
+	| Binop of binop * expr * expr
+	| Unop of unop * unop_flag * expr
 
 	| Intrinsic of intrinsic * expr list
 	| Function of func
 
 and expr = {
-	cexpr : expr_expr;
-	ctype : t;
-	cpos : pos;
+	expr : expr_expr;
+	t : t;
+	pos : pos;
 }
+
+and const =
+	| S of string (* String *)
+	| I of int32 (* Int *)
+	| D of string (* Float *)
+	| F of string (* Single *)
+	| B of bool
+	| Nil (* null *)
+	| This
+	| Super
 
 and stat_t =
 	| VarDecl of var * expr option
 	| If of expr * statement * statement option
 	| While of expr * statement * Ast.while_flag
-	| Switch of expr * (tconstant list * statement) list * statement option
+	| Switch of expr * (const list * statement) list * statement option
 	| Try of statement * (var * statement) list
 	| Return of expr option
 	| Break of int
@@ -156,7 +171,7 @@ and var = {
 }
 
 and func = {
-	fargs : (var * tconstant option) list;
+	fargs : (var * const option) list;
 	fret : t;
 	fexpr : statement;
 	ftypes : tparam array;
@@ -221,6 +236,37 @@ and cls = {
 	mutable tenclosing : cls option;
 	mutable tnested : cls list;
 }
+
+(* all expression helpers go here *)
+module Expr =
+struct
+
+	let mk e t p = { expr = e; t = t; pos = p; }
+
+	let mkt t = {
+		ctype = t;
+		cextra = None;
+	}
+
+	(* expression operators. read as 'expr with' *)
+	(* constructs expressions from expr_expr and a tuple of type and position *)
+	(* which can in turn be generated with +@ *)
+	let ($) e (t,p) = mk e t p
+	(* read as 'expr with type' *)
+	let ($:) e (t,p) = mk e (mkt t) p
+
+	(* type and position binding operator *)
+	(* read as 'and at': constructs a tuple from its operators *)
+	(* it has lower precedence than 'expr with' operators *)
+	let (+@) t p = (t,p)
+
+	(* mkt unary *)
+	let (!:) = mkt
+
+	let sample_expr p =
+		Binop(OpAdd, Const(S"Hello, ") $: String +@ p, Const(S"World!") $: String +@ p) $: String +@ p
+
+end;;
 
 type gen = {
 	gcom : Common.context;
