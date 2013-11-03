@@ -24,7 +24,9 @@ open Flags;;
 
 (* typed AST used by Gencommon *)
 (* its main purpose is to be much closer to what the statically typed target can understand *)
+(* it also is designed to generate less garbage on filters, and allow optimizations to happen *)
 type valuetype =
+	(* any type that has a simplified form should not be referred using the longer cls * cparams form *)
 	| Void
 	| Bool
 	| Char
@@ -40,14 +42,15 @@ type valuetype =
 	| Struct of cls * cparams
 
 and ctype =
+	(* any type that has a simplified form should not be referred using the longer cls * cparams form *)
 	| String
 	| Dynamic
 	| Pointer of ctype
 	| Vector of ctype
 	| Array of ctype
 	| Null of valuetype
-	| Fun of callconv Flags.t * ctype * (ctype list)
-	| Type of ctype (* Class<> *)
+	| Fun of funprop list * ctype * (ctype list)
+	| Type of cls (* Class<> *)
 	| Inst of cls * cparams
 	| Value of valuetype
 
@@ -60,32 +63,58 @@ and t = {
 
 and cparams = t list
 
-and callconv =
+and funprop =
 	| GenericFunc
-	| None
+		(* is a generic function *)
+	| VarFunc
+	| PureFunc
+	| VarArgs
+	| Callconv of string
 
-and expr =
-	| Const of tconstant * t
+and intrinsic =
+	(* general *)
+	| IArrayDecl of t
+	| IVectorDecl of t
+	| INewVector
+	| IVectorLen
+	(* reflection *)
+	| ICreateEmpty
+	| ICreateEmptyConst of cls
+	(* Std *)
+	| IIs
+	| IIsConst of cls
+	| IAs of t (* warning: no value types possible *)
+	| IRethrow
+	| IGetFields
+
+	(* others *)
+	| ICustom of string
+
+and expr_expr =
+	| Const of tconstant (* p *)
 	| Local of var
-	| Cast of expr * t
+	| Cast of expr * t (* p *)
 
 	| FieldAcc of expr * tfield_access
 	| StaticAcc of tfield_access
-	| Call of expr * expr_pos list
+	| Call of expr * expr list (* p *)
 	| ArrayAcc of expr * expr
 
-	| IfVal of expr * expr_pos * expr_pos
-	| Binop of Ast.binop * expr * expr * pos
+	| IfVal of expr * expr * expr
+	| Binop of Ast.binop * expr * expr
 	| Unop of Ast.unop * Ast.unop_flag * expr
 
-	| ArrayDecl of t * expr_pos list
-	| VarDecl of var * expr option
-
+	| Intrinsic of intrinsic * expr list
 	| Function of func
 
-and expr_pos = expr * pos
+and expr = {
+	cexpr : expr_expr;
+	ctype : t;
+	cpos : pos;
+}
 
 and stat_t =
+	| VarDecl of var * expr option
 	| If of expr * statement * statement option
 	| While of expr * statement * Ast.while_flag
 	| Switch of expr * (tconstant list * statement) list * statement option
@@ -150,18 +179,24 @@ and field = {
 	mutable foverrides : field option;
 	mutable fkind : fkind;
 	mutable fflags : fflag Flags.t;
+	mutable fnative_modifiers : string list;
 }
 
 and fkind =
 	| KVar
+		(* a normal var *)
 	| KVarProp of bool * bool (* read, write *)
+		(* a property (getter/setter call) and also an underlying var *)
 	| KProp of bool * bool (* read, write *)
+		(* only a property *)
 	| KMethod of func
 
 and visibility =
 	| VPublic
 	| VInternal
+		(* only visible in this assembly *)
 	| VNested
+		(* only visible to enclosing type *)
 	| VProtected
 	| VPrivate
 
@@ -185,4 +220,8 @@ and cls = {
 	(* "private" fields: DO NOT change them without calling the proper change function *)
 	mutable tenclosing : cls option;
 	mutable tnested : cls list;
+}
+
+type gen = {
+	gcom : Common.context;
 }

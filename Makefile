@@ -33,7 +33,7 @@ EXPORT=../../../projects/motionTools/haxe
 
 MODULES=ast type lexer common genxml parser typecore optimizer typeload \
 codegen gencommon genas3 gencpp genjs genneko genphp genswf8 \
-	genswf9 genswf genjava gencs interp typer matcher dce version main flags gencommonType
+	genswf9 genswf gencommonType genjavaDeprecated genjava gencs gencsDeprecated interp typer matcher dce version main flags
 
 ADD_REVISION=0
 
@@ -112,9 +112,9 @@ gencommon.cmx: type.cmx common.cmx codegen.cmx ast.cmx
 
 gencpp.cmx: type.cmx lexer.cmx common.cmx codegen.cmx ast.cmx
 
-gencs.cmx: type.cmx lexer.cmx gencommon.cmx common.cmx codegen.cmx ast.cmx
+gencsDeprecated.cmx: type.cmx lexer.cmx gencommon.cmx common.cmx codegen.cmx ast.cmx
 
-genjava.cmx: type.cmx gencommon.cmx common.cmx codegen.cmx ast.cmx
+genjavaDeprecated.cmx: type.cmx gencommon.cmx common.cmx codegen.cmx ast.cmx
 
 genjs.cmx: type.cmx optimizer.cmx lexer.cmx common.cmx codegen.cmx ast.cmx
 
@@ -130,11 +130,11 @@ genswf9.cmx: type.cmx lexer.cmx genswf8.cmx common.cmx codegen.cmx ast.cmx
 
 genxml.cmx: type.cmx lexer.cmx common.cmx ast.cmx
 
-interp.cmx: typecore.cmx type.cmx lexer.cmx genneko.cmx common.cmx codegen.cmx ast.cmx genswf.cmx genjava.cmx parser.cmx
+interp.cmx: typecore.cmx type.cmx lexer.cmx genneko.cmx common.cmx codegen.cmx ast.cmx genswf.cmx genjavaDeprecated.cmx parser.cmx
 
 matcher.cmx: optimizer.cmx codegen.cmx typecore.cmx type.cmx typer.cmx common.cmx ast.cmx
 
-main.cmx: dce.cmx matcher.cmx typer.cmx typeload.cmx typecore.cmx type.cmx parser.cmx optimizer.cmx lexer.cmx interp.cmx genxml.cmx genswf.cmx genphp.cmx genneko.cmx genjs.cmx gencpp.cmx genas3.cmx common.cmx codegen.cmx ast.cmx gencommon.cmx genjava.cmx gencs.cmx version.cmx
+main.cmx: dce.cmx matcher.cmx typer.cmx typeload.cmx typecore.cmx type.cmx parser.cmx optimizer.cmx lexer.cmx interp.cmx genxml.cmx genswf.cmx genphp.cmx genneko.cmx genjs.cmx gencpp.cmx genas3.cmx common.cmx codegen.cmx ast.cmx gencommon.cmx genjavaDeprecated.cmx gencsDeprecated.cmx version.cmx
 
 gencommonType.cmx: flags.cmx type.cmx common.cmx codegen.cmx ast.cmx
 

@@ -942,13 +942,13 @@ try
 			Genswf.add_swf_lib com file true
 		),"<file> : use the SWF library for type checking");
 		("-java-lib",Arg.String (fun file ->
-			Genjava.add_java_lib com file false
+			GenjavaDeprecated.add_java_lib com file false
 		),"<file> : add an external JAR or class directory library");
 		("-net-lib",Arg.String (fun file ->
-			Gencs.add_net_lib com file false
+			GencsDeprecated.add_net_lib com file false
 		),"<file> : add an external .NET DLL file");
 		("-net-std",Arg.String (fun file ->
-			Gencs.add_net_std com file
+			GencsDeprecated.add_net_std com file
 		),"<file> : add a root std .NET DLL search path");
 		("-x", Arg.String (fun file ->
 			let neko_file = file ^ ".n" in
@@ -1193,7 +1193,7 @@ try
 			add_std "cpp";
 			"cpp"
 		| Cs ->
-			Gencs.before_generate com;
+			GencsDeprecated.before_generate com;
 			add_std "cs"; "cs"
 		| Java ->
       let old_flush = ctx.flush in
@@ -1201,7 +1201,7 @@ try
         List.iter (fun (_,_,close,_,_) -> close()) com.java_libs;
         old_flush()
       );
-			Genjava.before_generate com;
+			GenjavaDeprecated.before_generate com;
 			add_std "java"; "java"
 	) in
 	(* if we are at the last compilation step, allow all packages accesses - in case of macros or opening another project file *)
@@ -1318,10 +1318,10 @@ try
 			Gencpp.generate com;
 		| Cs ->
 			Common.log com ("Generating Cs in : " ^ com.file);
-			Gencs.generate com;
+			GencsDeprecated.generate com;
 		| Java ->
 			Common.log com ("Generating Java in : " ^ com.file);
-			Genjava.generate com;
+			GenjavaDeprecated.generate com;
 		);
 	end;
 	Sys.catch_break false;
