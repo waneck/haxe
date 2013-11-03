@@ -2443,6 +2443,7 @@ let macro_lib =
 				(match com.platform with
 				| Flash -> Genswf.add_swf_lib com file false
 				| Java -> GenjavaDeprecated.add_java_lib com file false
+				| Cs -> GencsDeprecated.add_net_lib com file false
 				| _ -> failwith "Unsupported platform");
 				VNull
 			| _ ->
