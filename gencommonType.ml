@@ -55,7 +55,7 @@ and ctype =
 	| Array of ctype
 	| Null of valuetype
 	| Fun of funprop list * ctype * (ctype list)
-	| Type of cls (* Class<> *)
+	| Type of cls option (* Class<>; Type None means it's Class<Dynamic> *)
 	| Inst of cls * cparams
 	| Value of valuetype
 
@@ -158,7 +158,7 @@ and const =
 
 and tfield_access =
 	| AClassField of field_access
-	| ATypedExternal of ct
+	(* | ATypedExternal of ct *)
 	| ADynamic of ct
 
 and var = {
@@ -172,11 +172,21 @@ and var = {
 }
 
 and func = {
-	fargs : (var * const option) list;
+	fargs : (var * fun_arg) list;
 	fret : ct;
 	fexpr : statement;
 	ftypes : tparam array;
 }
+
+and fun_arg = {
+	aopt : const option;
+	akind : arg_kind;
+}
+
+and arg_kind =
+	| ANormal
+	| AOut
+	| ARef
 
 and tparam = {
 	mutable pname : string;
@@ -188,14 +198,14 @@ and field = {
 	mutable fname : string;
 	mutable fpublic : bool;
 		(* declared public? *)
-	mutable fvis : visibility Flags.t;
+	mutable fvis : visibility;
 		(* actual (computed) visibility *)
 	mutable ftype : ct;
 	mutable fstatic : bool;
-	mutable foverrides : field option;
+	mutable foverride : field option;
 	mutable fkind : fkind;
 	mutable fflags : fflag Flags.t;
-	mutable fnative_modifiers : string list;
+	mutable fmodifiers : string list;
 }
 
 and fkind =
@@ -220,17 +230,21 @@ and fflag =
 	| FPure (* strict: if on, optimizations can be performed *)
 		(* it means that it's a pure read-only value, so the order in which it's called *)
 		(* doesn't matter, and results can be cached *)
-	| FExtern
-		(* extern field: it doesn't really exist *)
+	| FWriteAccess
+		(* was accessed for writing *)
+	| FReadAccess
+		(* was accessed for reading *)
 
-and path = string list * string list * string
+and path = string list * string
 	(* package * nested types * name *)
 
 and cls = {
+	cid : int;
 	mutable tpath : path;
 	mutable ttypes : tparam array;
 	mutable tsuper : (cls * cparams) option;
 	mutable tord_fields : field list;
+	mutable tord_methods : field list;
 	mutable tfields : (string, field) PMap.t;
 	mutable tmethods : (string, field list) PMap.t;
 	mutable timplements : (cls * cparams) list;
@@ -273,18 +287,6 @@ and filter_ctx = {
 		(* meaning that the inner expressions will still be mapped *)
 }
 
-let mk_filter_ctx
-		?expr_map
-		?enter_stmt
-		?exit_stmt
-		?shallow_stmt_map () =
-	{
-		expr_map = expr_map;
-		enter_stmt = enter_stmt;
-		exit_stmt = exit_stmt;
-		shallow_stmt_map = shallow_stmt_map;
-	}
-
 (* all expression helpers go here *)
 module Expr =
 struct
@@ -324,7 +326,7 @@ struct
 
 	let mkthis gen = match gen.gfield.fstatic with
 	| true ->
-		Const(Class gen.gcur) +: Type gen.gcur
+		Const(Class gen.gcur) +: Type (Some gen.gcur)
 	| false ->
 		Const This +: Inst(gen.gcur, mkcls_params gen.gcur)
 
@@ -346,7 +348,14 @@ struct
 	let filter_map fn lst =
 		List.rev (rev_filter_map fn lst)
 
+	let array_empty () =
+		Array.init 0 (fun _ -> assert false)
+
+	let opt_or_empty = function
+		| Some v -> v
+		| None -> array_empty()
 end;;
+open Helpers;;
 
 type t_dependency =
 	| DAfter of float
@@ -391,3 +400,104 @@ struct
 		()
 
 end;;
+
+(* boilerplate *)
+let mk_filter_ctx
+		?expr_map
+		?enter_stmt
+		?exit_stmt
+		?shallow_stmt_map () =
+	{
+		expr_map = expr_map;
+		enter_stmt = enter_stmt;
+		exit_stmt = exit_stmt;
+		shallow_stmt_map = shallow_stmt_map;
+	}
+
+let cls_id = ref 0
+
+let mk_cls
+		~path
+		?types
+		?super
+		?(fields=[])
+		?(implements=[]) () =
+
+	let types = opt_or_empty types in
+	let ord_fields, ord_methods =
+		List.partition (function
+			| { fkind = KMethod _ } -> false
+			| _ -> true
+		) fields
+	in
+	incr cls_id;
+	let id = !cls_id in
+	let fields = List.fold_left (fun map f ->
+		assert (not (PMap.mem f.fname map));
+		PMap.add f.fname f map
+	) PMap.empty ord_fields
+	in
+	let methods = List.fold_left (fun map f ->
+		let lst = try
+			PMap.find f.fname map
+		with | Not_found ->
+			[]
+		in
+		PMap.add f.fname (f :: lst) map
+	) PMap.empty ord_methods in
+	{
+		cid = id;
+		tpath = path;
+		ttypes = types;
+		tsuper = super;
+		tord_fields = ord_fields;
+		tord_methods = ord_methods;
+		tfields = fields;
+		tmethods = methods;
+		timplements = implements;
+
+		tenclosing = None;
+		tnested = [];
+	}
+
+let add_child ~parent ~child =
+	assert (child.tenclosing = None);
+	child.tenclosing <- Some parent;
+	parent.tnested <- child :: parent.tnested
+
+let remove_child ~parent ~child =
+	assert (child.tenclosing = Some parent);
+	child.tenclosing <- None;
+	let c, others = List.partition (fun v -> v == child) parent.tnested in
+	assert (c <> []);
+	parent.tnested <- others
+
+let field_id = ref 0
+
+let mk_field
+		~static
+		~name
+		~ftype
+		~kind
+		?(public=false)
+		?(vis=VPrivate)
+		?override
+		?(flags = Flags.empty)
+		?(modifiers = []) () =
+
+	incr field_id;
+	let id = !field_id in
+	{
+		fid = id;
+		fname = name;
+		fpublic = public;
+		fvis = vis;
+		ftype = ftype;
+		fstatic = static;
+		foverride = override;
+		fkind = kind;
+		fflags = flags;
+		fmodifiers = modifiers;
+	}
+
+

@@ -35,24 +35,73 @@ module TExprMap =
 struct
 (* in order to map texpr into c-ast, we need to implement the following abstract structures: *)
 
-	type type_to_ctype = {
+	type type_conversion = {
 		(* how types are mapped into ctypes *)
-		tc_apply_params : module_type -> (string * t) list -> tparams -> t -> GencommonType.ct;
+		(* tc_apply_params : module_type -> (string * t) list -> tparams -> t -> t; *)
+		map_params : (site_info -> tparams -> cparams) option;
 			(* some targets will map their type parameters differently *)
 			(* (e.g. Java and its lack of support for basic types in tparams) *)
-
+		map_type : t -> ct;
+		map_arg : (site_info -> (tvar * tconstant option) -> fun_arg) option;
 	}
 
 	and extern_loading = {
 		(* try to convert target-specific externs into more accurate types *)
 		(* (using e.g. information from a native lib) *)
-		try_load_extern : module_type -> cls option;
+		etry_load : module_type -> cls option;
 	}
+
+	and enum_conversion = {
+		enum_to_cls : tenum -> cls;
+		enum_field_acc : texpr -> tfield_access;
+			(* texpr will be either a TField or a TCall( TField, _ ) *)
+	}
+
+	and anon_conversion = {
+		anon_to_ct : t -> ct;
+			(* this conversion will make an effort to preserve typedefs *)
+		anon_field_acc : texpr -> tfield_access;
+			(* texpr will be either a TField or a TCall( TField, _ ) *)
+	}
+
+	and site_info =
+		| ClassSite of module_type
+		| FieldSite of module_type * tclass_field
+		| EnumFieldSite of tenum * tenum_field
+		| AnonFunctionSite of tfunc * type_params
 
 
 (* context *)
 	and ctx = {
 		ccom : Common.context;
 		load_type : module_type->cls;
+
+		mutable extern : extern_loading option;
+		mutable econv : enum_conversion;
+		mutable aconv : anon_conversion;
+		mutable tconv : type_conversion;
 	}
+
+
+	(** default implementations **)
+	(*****************************)
+
+	(** enum conversion **)
+	let convert_simple_e ctx e =
+		let c = mk_cls ~path:e.e_path () in
+		c
+
+	let default_e2c ctx =
+		let enum_to_cls e =
+			()
+		in
+		()
+
+	let default_econv ctx =
+		{
+			enum_to_cls = default_e2c ctx;
+			enum_field_acc = default_efacc ctx;
+		}
+
 end;;
+
