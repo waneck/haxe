@@ -112,33 +112,16 @@ and expr_expr =
 	| Intrinsic of intrinsic * expr list
 	| Function of func
 
-and expr = {
-	expr : expr_expr;
-	t : t;
-	pos : pos;
-}
-
-and const =
-	| S of string (* String *)
-	| I of int32 (* Int *)
-	| D of string (* Float *)
-	| F of string (* Single *)
-	| B of bool
-	| Nil (* null *)
-	| This
-	| Class of cls
-	| Super
-
 and stat_t =
 	| VarDecl of var * expr option
 	| If of expr * statement * statement option
 	| While of expr * statement * Ast.while_flag
-	| Switch of expr * (const list * statement) list * statement option
+	| Switch of expr * (const list * statement * bool) list * statement option
+		(* switch (cond) * ( constants: statment * fallthrough:bool) * statement *)
 	| Try of statement * (var * statement) list
 	| Return of expr option
 	| Break of int
 	| Continue of int
-	| SwitchBreak of int
 	| Throw of expr
 	| SExpr of expr
 
@@ -155,6 +138,23 @@ and field_access = {
 	a_type : t;
 	a_params : t array;
 }
+
+and expr = {
+	expr : expr_expr;
+	t : t;
+	pos : pos;
+}
+
+and const =
+	| S of string (* String *)
+	| I of int32 (* Int *)
+	| D of string (* Float *)
+	| F of string (* Single *)
+	| B of bool
+	| Nil (* null *)
+	| This
+	| Class of cls
+	| Super
 
 and tfield_access =
 	| AClassField of field_access
@@ -239,6 +239,8 @@ and cls = {
 	mutable tnested : cls list;
 }
 
+(** Generator **)
+
 type gen = {
 	gcom : Common.context;
 
@@ -246,7 +248,41 @@ type gen = {
 		(* current class field running *)
 	mutable gcur : cls;
 		(* current class being mapped *)
+
+	mutable filters : (string * float * filter) list;
+	mutable filters_dirty : bool;
 }
+
+and filter = gen->filter_ctx
+(* the mapper calls the "gen" function for each new field being mapped *)
+
+and filter_ctx = {
+	(* a filter context determines how and if the mapper will map the expressions *)
+	(* and statements. setting any of them as None means that the filter provides *)
+	(* no implementation for it *)
+	expr_map : (expr->expr) option;
+		(* maps an expression into another expression *)
+	enter_stmt : (statement->unit) option;
+		(* is called when the mapper enters a statement *)
+	exit_stmt : (statement->unit) option;
+		(* is called when the mapper exits a statement *)
+	shallow_stmt_map : (statement->statement) option;
+		(* maps a statement into another statement *)
+		(* the implementation assumes that it's a shallow map - *)
+		(* meaning that the inner expressions will still be mapped *)
+}
+
+let mk_filter_ctx
+		?expr_map
+		?enter_stmt
+		?exit_stmt
+		?shallow_stmt_map () =
+	{
+		expr_map = expr_map;
+		enter_stmt = enter_stmt;
+		exit_stmt = exit_stmt;
+		shallow_stmt_map = shallow_stmt_map;
+	}
 
 (* all expression helpers go here *)
 module Expr =
@@ -277,18 +313,80 @@ struct
 	let (+:) e t = (e, mkt t)
 
 	(* value type unary *)
-	let (!%) t = Value t
+	let (!&) t = Value t
 
 	let sample_expr p : expr =
 		Binop(OpAdd, Const(S"Hello, ") +: String @@ p, Const(S"World!") +: String @@ p) +: String @@ p
 
 	let mkcls_params cls =
-		Array.init (Array.length cls.ttypes) (fun i -> mkt !%(TypeParam i))
+		Array.init (Array.length cls.ttypes) (fun i -> mkt !&(TypeParam i))
 
 	let mkthis gen = match gen.gfield.fstatic with
 	| true ->
 		Const(Class gen.gcur) +: Type gen.gcur
 	| false ->
 		Const This +: Inst(gen.gcur, mkcls_params gen.gcur)
+
+end;;
+
+module Helpers =
+(* some helpers and extension methods *)
+struct
+
+	let rev_iter_map fn lst =
+		let rec loop acc = function
+			| [] -> acc
+			| v :: lst -> match fn v with
+			| None -> loop acc lst
+			| Some v -> loop (v :: acc) lst
+		in
+		loop [] lst
+
+	let iter_map fn lst =
+		List.rev (rev_iter_map fn lst)
+
+end;;
+
+type t_dependency =
+	| DAfter of float
+	| DBefore of float
+
+module Filters =
+struct
+
+	exception ImpossibleDependency of string
+
+	let max_dep = 10000.0
+	let min_dep = - (10000.0)
+
+	let solve_deps name (deps:t_dependency list) =
+		let vmin = min_dep -. 1.0 in
+		let vmax = max_dep +. 1.0 in
+		let rec loop dep vmin vmax =
+			match dep with
+			| [] ->
+				if vmin >= vmax then raise (ImpossibleDependency name);
+				(vmin +. vmax) /. 2.0
+			| head :: tail ->
+				match head with
+				| DBefore f ->
+					loop tail (max vmin f) vmax
+				| DAfter f ->
+					loop tail vmin (min vmax f)
+		in
+		loop deps vmin vmax
+
+	let add_filter gen name priority filter =
+		gen.filters <- (name,priority,filter) :: gen.filters;
+		gen.filters_dirty <- true
+
+	let run_filters gen field =
+		(* sort by priority *)
+		if gen.filters_dirty then begin
+			gen.filters <- List.sort (fun (_,f1,_) (_,f2,_) -> compare f1 f2) gen.filters;
+			gen.filters_dirty <- false
+		end;
+		(* TODO: not implemented yet *)
+		()
 
 end;;
