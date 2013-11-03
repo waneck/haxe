@@ -20,11 +20,11 @@
  * DEALINGS IN THE SOFTWARE.
  *)
 
-open Gencommon.ReflectionCFs
+open GencommonDeprecated.ReflectionCFs
 open Ast
 open Common
-open Gencommon
-open Gencommon.SourceWriter
+open GencommonDeprecated
+open GencommonDeprecated.SourceWriter
 open Type
 open Printf
 open Option
@@ -1466,7 +1466,7 @@ let configure gen =
         | true, Some(cl,_) ->
            (try
               let cf2 = PMap.find cf.cf_name cl.cl_statics in
-              Gencommon.CastDetect.type_eq gen EqStrict cf.cf_type cf2.cf_type;
+              GencommonDeprecated.CastDetect.type_eq gen EqStrict cf.cf_type cf2.cf_type;
               ["new"]
             with
               | Not_found | Unify_error _ ->

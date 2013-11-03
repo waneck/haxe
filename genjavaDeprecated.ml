@@ -24,8 +24,8 @@ open JData
 open Unix
 open Ast
 open Common
-open Gencommon
-open Gencommon.SourceWriter
+open GencommonDeprecated
+open GencommonDeprecated.SourceWriter
 open Type
 open Printf
 open Option
