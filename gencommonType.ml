@@ -23,7 +23,7 @@ open Type;;
 open Flags;;
 open Ast;;
 
-(* typed AST used by Gencommon *)
+(* typed AST used by Gencommon : called c-ast herein *)
 (* its main purpose is to be much closer to what the statically typed target can understand *)
 (* it also is designed to: *)
 	(* generate less garbage on filters *)
@@ -61,12 +61,12 @@ and ctype =
 
 and pos = Ast.pos
 
-and t = {
+and ct = {
 	ctype : ctype;
 	cextra : unit option; (* extra flags about the type *)
 }
 
-and cparams = t array
+and cparams = ct array
 
 and funprop =
 	| GenericFunc
@@ -78,9 +78,9 @@ and funprop =
 
 and intrinsic =
 	(* general *)
-	| IArrayDecl of t
-	| IVectorDecl of t
-	| INewVector
+	| IArrayDecl of ct
+	| IVectorDecl of ct
+	| INewVector of ct
 	| IVectorLen
 	(* reflection *)
 	| ICreateEmpty
@@ -88,7 +88,7 @@ and intrinsic =
 	(* Std *)
 	| IIs
 	| IIsConst of cls
-	| IAs of t (* warning: no value types possible *)
+	| IAs of ct (* warning: no value types possible *)
 	| IRethrow
 	| IGetFields
 
@@ -98,7 +98,7 @@ and intrinsic =
 and expr_expr =
 	| Const of const
 	| Local of var
-	| Cast of expr * t
+	| Cast of expr * ct
 
 	| FieldAcc of expr * tfield_access
 	| StaticAcc of tfield_access
@@ -134,14 +134,14 @@ and statement = {
 
 and field_access = {
 	a_field : field;
-	a_parent : t;
-	a_type : t;
-	a_params : t array;
+	a_parent : ct;
+	a_type : ct;
+	a_params : ct array;
 }
 
 and expr = {
 	expr : expr_expr;
-	t : t;
+	t : ct;
 	pos : pos;
 }
 
@@ -158,13 +158,13 @@ and const =
 
 and tfield_access =
 	| AClassField of field_access
-	| ATypedExternal of t
-	| ADynamic of t
+	| ATypedExternal of ct
+	| ADynamic of ct
 
 and var = {
 	vid : int;
 	mutable vname : string;
-	mutable vtype : t;
+	mutable vtype : ct;
 	mutable vwrite : bool;
 		(* is it read-only? *)
 	mutable vexpr : expr option;
@@ -173,14 +173,14 @@ and var = {
 
 and func = {
 	fargs : (var * const option) list;
-	fret : t;
+	fret : ct;
 	fexpr : statement;
 	ftypes : tparam array;
 }
 
 and tparam = {
 	mutable pname : string;
-	pconstraints : t list;
+	pconstraints : ct list;
 }
 
 and field = {
@@ -190,7 +190,7 @@ and field = {
 		(* declared public? *)
 	mutable fvis : visibility Flags.t;
 		(* actual (computed) visibility *)
-	mutable ftype : t;
+	mutable ftype : ct;
 	mutable fstatic : bool;
 	mutable foverrides : field option;
 	mutable fkind : fkind;
@@ -232,6 +232,7 @@ and cls = {
 	mutable tsuper : (cls * cparams) option;
 	mutable tord_fields : field list;
 	mutable tfields : (string, field) PMap.t;
+	mutable tmethods : (string, field list) PMap.t;
 	mutable timplements : (cls * cparams) list;
 
 	(* "private" fields: DO NOT change them without calling the proper change function *)
@@ -300,7 +301,7 @@ struct
 		cextra = None;
 	}
 
-	type typed_expr = expr_expr * t
+	type typed_expr = expr_expr * ct
 
 	(* position operator. read as 'at pos' *)
 	(* constructs expressions from typed_expr and the position *)
@@ -333,7 +334,7 @@ module Helpers =
 (* some helpers and extension methods *)
 struct
 
-	let rev_iter_map fn lst =
+	let rev_filter_map fn lst =
 		let rec loop acc = function
 			| [] -> acc
 			| v :: lst -> match fn v with
@@ -342,8 +343,8 @@ struct
 		in
 		loop [] lst
 
-	let iter_map fn lst =
-		List.rev (rev_iter_map fn lst)
+	let filter_map fn lst =
+		List.rev (rev_filter_map fn lst)
 
 end;;
 

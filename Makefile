@@ -139,6 +139,8 @@ main.cmx: dce.cmx matcher.cmx typer.cmx typeload.cmx typecore.cmx type.cmx parse
 
 gencommonType.cmx: flags.cmx type.cmx common.cmx codegen.cmx ast.cmx
 
+gencommon.cmx: gencommonType.cmx type.cmx flags.cmx ast.cmx common.cmx
+
 flags.cmx: flags.cmi
 
 flags.cmi: flags.mli
