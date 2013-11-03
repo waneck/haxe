@@ -32,9 +32,9 @@ RELDIR=../../..
 EXPORT=../../../projects/motionTools/haxe
 
 MODULES=ast type lexer common genxml parser typecore optimizer typeload \
-codegen gencommonDeprecated gencommon genas3 gencpp genjs genneko genphp genswf8 \
-	genswf9 genswf gencommonType genjavaDeprecated genjava gencs gencsDeprecated \
-	interp typer matcher dce version main flags
+codegen flags gencommonType gencommonDeprecated gencommon genas3 gencpp genjs genneko genphp genswf8 \
+	genswf9 genswf genjavaDeprecated genjava gencs gencsDeprecated \
+	interp typer matcher dce version main 
 
 ADD_REVISION=0
 

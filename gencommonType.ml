@@ -206,10 +206,11 @@ and field = {
 	mutable fkind : fkind;
 	mutable fflags : fflag Flags.t;
 	mutable fmodifiers : string list;
+	mutable fdeclared : cls;
 }
 
 and fkind =
-	| KVar
+	| KVar of const option
 		(* a normal var *)
 	| KVarProp of bool * bool (* read, write *)
 		(* a property (getter/setter call) and also an underlying var *)
@@ -234,20 +235,22 @@ and fflag =
 		(* was accessed for writing *)
 	| FReadAccess
 		(* was accessed for reading *)
+	| FEnum
+		(* was an enum field *)
 
 and path = string list * string
 	(* package * nested types * name *)
 
 and cls = {
 	cid : int;
-	mutable tpath : path;
-	mutable ttypes : tparam array;
-	mutable tsuper : (cls * cparams) option;
-	mutable tord_fields : field list;
-	mutable tord_methods : field list;
-	mutable tfields : (string, field) PMap.t;
-	mutable tmethods : (string, field list) PMap.t;
-	mutable timplements : (cls * cparams) list;
+	mutable cpath : path;
+	mutable ctypes : tparam array;
+	mutable csuper : (cls * cparams) option;
+	mutable cord_fields : field list;
+	mutable cord_methods : field list;
+	mutable cfields : (string, field) PMap.t;
+	mutable cmethods : (string, field list) PMap.t;
+	mutable cimplements : (cls * cparams) list;
 
 	(* "private" fields: DO NOT change them without calling the proper change function *)
 	mutable tenclosing : cls option;
@@ -316,13 +319,13 @@ struct
 	let (+:) e t = (e, mkt t)
 
 	(* value type unary *)
-	let (!&) t = Value t
+	let (~&) t = Value t
 
 	let sample_expr p : expr =
 		Binop(OpAdd, Const(S"Hello, ") +: String @@ p, Const(S"World!") +: String @@ p) +: String @@ p
 
 	let mkcls_params cls =
-		Array.init (Array.length cls.ttypes) (fun i -> mkt !&(TypeParam i))
+		Array.init (Array.length cls.ctypes) (fun i -> mkt ~&(TypeParam i))
 
 	let mkthis gen = match gen.gfield.fstatic with
 	| true ->
@@ -432,7 +435,7 @@ let mk_cls
 	in
 	incr cls_id;
 	let id = !cls_id in
-	let fields = List.fold_left (fun map f ->
+	let mapfields = List.fold_left (fun map f ->
 		assert (not (PMap.mem f.fname map));
 		PMap.add f.fname f map
 	) PMap.empty ord_fields
@@ -445,20 +448,62 @@ let mk_cls
 		in
 		PMap.add f.fname (f :: lst) map
 	) PMap.empty ord_methods in
-	{
+	let ret = {
 		cid = id;
-		tpath = path;
-		ttypes = types;
-		tsuper = super;
-		tord_fields = ord_fields;
-		tord_methods = ord_methods;
-		tfields = fields;
-		tmethods = methods;
-		timplements = implements;
+		cpath = path;
+		ctypes = types;
+		csuper = super;
+		cord_fields = ord_fields;
+		cord_methods = ord_methods;
+		cfields = mapfields;
+		cmethods = methods;
+		cimplements = implements;
 
 		tenclosing = None;
 		tnested = [];
-	}
+	} in
+	List.iter (fun f ->
+		f.fdeclared <- ret
+	) fields;
+	ret
+
+let null_path = ([],"<null>")
+
+let null_cls = mk_cls ~path:(null_path) ()
+
+let add_field cls field =
+	assert (field.fdeclared == null_cls);
+	field.fdeclared <- cls;
+	match field.fkind with
+	| KMethod _ ->
+		let v = try
+			PMap.find field.fname cls.cmethods
+		with | Not_found ->
+			[]
+		in
+		cls.cord_methods <- field :: cls.cord_methods;
+		cls.cmethods <- PMap.add field.fname (field :: v) cls.cmethods
+	| _ ->
+		cls.cord_fields <- field :: cls.cord_fields;
+		cls.cfields <- PMap.add field.fname field cls.cfields
+
+let field_detach field =
+	let cls = field.fdeclared in
+	field.fdeclared <- null_cls;
+	match field.fkind with
+	| KMethod _ ->
+		let v = try
+			PMap.find field.fname cls.cmethods
+		with | Not_found ->
+			assert false
+		in
+		let v, rest = List.partition (fun f -> f == field) v in
+		assert (v <> []);
+		cls.cmethods <- PMap.add field.fname rest cls.cmethods;
+		cls.cord_methods <- List.filter (fun f -> f == field) cls.cord_methods
+	| _ ->
+		cls.cfields <- PMap.remove field.fname cls.cfields;
+		cls.cord_fields <- List.filter (fun f -> f == field) cls.cord_fields
 
 let add_child ~parent ~child =
 	assert (child.tenclosing = None);
@@ -483,11 +528,12 @@ let mk_field
 		?(vis=VPrivate)
 		?override
 		?(flags = Flags.empty)
-		?(modifiers = []) () =
+		?(modifiers = [])
+		?(declared = null_cls) () =
 
 	incr field_id;
 	let id = !field_id in
-	{
+	let f = {
 		fid = id;
 		fname = name;
 		fpublic = public;
@@ -498,6 +544,10 @@ let mk_field
 		fkind = kind;
 		fflags = flags;
 		fmodifiers = modifiers;
-	}
+		fdeclared = null_cls;
+	} in
+	if declared != null_cls then
+		add_field declared f;
+	f
 
 

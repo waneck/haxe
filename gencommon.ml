@@ -88,20 +88,40 @@ struct
 
 	(** enum conversion **)
 	let convert_simple_e ctx e =
-		let c = mk_cls ~path:e.e_path () in
+		let i = ref 0 in
+		let fields = List.map (fun name ->
+			mk_field
+				~static:true
+				~name
+				~ftype:(mkt ~&(Int32 true))
+				~kind:(KVar (Some( I(Int32.of_int !i) )) )
+				~public:true
+				~vis:VPublic
+				~flags:( FPure |$ FEnum )
+				()
+		) e.e_names in
+		let c = mk_cls ~path:e.e_path ~fields () in
 		c
+
+	let is_simple_enum e =
+		not (List.exists (fun f ->
+			let ctor = PMap.find f e.e_constrs in
+			match follow ctor.ef_type with
+				| TFun _ -> true
+				| _ -> false
+		) e.e_names)
 
 	let default_e2c ctx =
 		let enum_to_cls e =
-			()
+			convert_simple_e ctx e
 		in
-		()
+		enum_to_cls
 
-	let default_econv ctx =
-		{
-			enum_to_cls = default_e2c ctx;
-			enum_field_acc = default_efacc ctx;
-		}
+	(* let default_econv ctx = *)
+		(* { *)
+			(* enum_to_cls = default_e2c ctx; *)
+			(* enum_field_acc = default_efacc ctx; *)
+		(* } *)
 
 end;;
 

@@ -48,3 +48,5 @@ let from_list vl =
 	List.fold_left (fun ret v -> set ret v) 0 vl
 
 let (|+) this v = set this v
+
+let (|$) v1 v2 = set empty v1 |+ v2
