@@ -42,8 +42,8 @@ type valuetype =
 	| IntPtr of bool (* signed : bool *)
 	| F32
 	| F64
-	| TypeParam of int
-	| MethodTypeParam of int
+	| TypeParam of int (* type param number *)
+	| MethodTypeParam of int * int (* function stack * type param number *)
 	| Struct of cls * cparams
 
 and ctype =
@@ -51,11 +51,11 @@ and ctype =
 	| String
 	| Dynamic
 	| EnumSuper
-	| Pointer of ctype
-	| Vector of ctype
-	| Array of ctype
+	| Pointer of ct
+	| Vector of ct
+	| Array of ct
 	| Null of valuetype
-	| Fun of funprop list * ctype * (ctype list)
+	| Fun of funprop list * ct * (ct list)
 	| Type of cls option (* Class<>; Type None means it's Class<Dynamic> *)
 	| Inst of cls * cparams
 	| Value of valuetype
@@ -74,6 +74,7 @@ and funprop =
 		(* is a generic function *)
 	| VarFunc
 	| PureFunc
+	| SideEffectsFree
 	| VarArgs
 	| Callconv of string
 
@@ -152,6 +153,7 @@ and const =
 	| S of string (* String *)
 	| I of int32 (* Int *)
 	| F of string (* Float *)
+	| C of char (* Char *)
 	| B of bool
 	| Nil (* null *)
 	| This
@@ -161,7 +163,7 @@ and const =
 and tfield_access =
 	| AClassField of field_access
 	(* | ATypedExternal of ct *)
-	| ADynamic of ct
+	| ADynamic of ct * bool (* bool determines if it should throw exceptions on type not found *)
 
 and var = {
 	vid : int;
@@ -172,7 +174,9 @@ and var = {
 	mutable vexpr : expr option;
 	mutable vcaptured_by : func list;
 	mutable vmax : expr option;
+		(* max value constrained *)
 	mutable vmin : expr option;
+		(* min value constrained *)
 	mutable vloopvar : bool;
 }
 
@@ -236,6 +240,8 @@ and fflag =
 	| FPure (* strict: if on, optimizations can be performed *)
 		(* it means that it's a pure read-only value, so the order in which it's called *)
 		(* doesn't matter, and results can be cached *)
+	| FSideEffectsFree
+		(* the call doesn't affect any state *)
 	| FWriteAccess
 		(* was accessed for writing *)
 	| FReadAccess
@@ -362,6 +368,19 @@ struct
 	let opt_or_empty = function
 		| Some v -> v
 		| None -> array_empty()
+
+	let path_s path =
+		match path with | ([], s) -> s | (p, s) -> (String.concat "." (fst path)) ^ "." ^ (snd path)
+
+	let listfind_i fn lst =
+		let rec loop i lst = match lst with
+			| [] -> raise Not_found
+			| hd :: tl -> if fn hd then
+				i
+			else
+				loop (i+1) tl
+		in
+		loop 0 lst
 end;;
 open Helpers;;
 
