@@ -22,6 +22,7 @@
 open Flags;;
 open Type;;
 open Ast;;
+open Common;;
 open GencommonType;;
 open GencommonType.Filters;;
 open GencommonType.Expr;;
@@ -144,6 +145,8 @@ struct
 				ctx.aconv.anon_to_ct (TAnon a))
 		| TInst(({ cl_kind = KTypeParameter _ } as ctp),_) ->
 			mkt ~&(lookup_tparam ctx ctp)
+		| TInst(c,p) when Meta.has Meta.Struct c.cl_meta ->
+			mkt ~&(Struct(cls_from_md ctx (TClassDecl c), map_params (convert_type ctx) p))
 		| TInst(c,p) ->
 			mkt (Inst(cls_from_md ctx (TClassDecl c), map_params (convert_type ctx) p))
 		| TEnum(e,p) ->
@@ -153,11 +156,11 @@ struct
 			mkt (Fun( [VarFunc], convert_type ctx ret, List.map (fun (n,o,t) ->
 				convert_type ctx t
 			) args ))
-		| TAbstract(a,p) ->
+		| TAbstract( ({ a_impl = Some _ } as a),p) ->
 			convert_type ctx (Codegen.Abstract.get_underlying_type a p)
 		| TDynamic _ -> mkt Dynamic
 		(* core type *)
-		| TAbstract( ({ a_impl = None } as a),p) -> mkt (try match a.a_path with
+		| TAbstract(a,p) -> mkt (try match a.a_path with
 			| [],"Int" -> ~&(I32 true)
 			| [],"UInt" -> ~&(I32 false)
 			| [],"Float" -> ~&F64
