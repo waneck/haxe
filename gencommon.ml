@@ -52,6 +52,7 @@ struct
 	}
 
 	and enum_conversion = {
+		mutable enum_super : (cls * cparams) option;
 		enum_to_cls : tenum -> cls;
 		enum_field_acc : texpr -> tfield_access;
 			(* texpr will be either a TField or a TCall( TField, _ ) *)
@@ -59,9 +60,11 @@ struct
 
 	and anon_conversion = {
 		anon_to_ct : t -> ct;
-			(* this conversion will make an effort to preserve typedefs *)
+			(* this call will make an effort to preserve typedefs *)
 		anon_field_acc : texpr -> tfield_access;
 			(* texpr will be either a TField or a TCall( TField, _ ) *)
+		anon_objdecl : anon_site_info -> texpr -> expr;
+			(* handle objdecl *)
 	}
 
 	and site_info =
@@ -70,6 +73,9 @@ struct
 		| EnumFieldSite of tenum * tenum_field
 		| AnonFunctionSite of tfunc * type_params
 
+	and anon_site_info =
+		| AMeta of module_type
+		| ASite of site_info
 
 (* context *)
 	and ctx = {
@@ -82,26 +88,57 @@ struct
 		mutable tconv : type_conversion;
 	}
 
+	let convert_type ctx = ctx.tconv.map_type
+
 
 	(** default implementations **)
 	(*****************************)
 
 	(** enum conversion **)
+	(* this (simple) version will: *)
+		(* - transform simple enum fields into static readonly vars *)
+		(* - transform parametered enum fields into static functions + ctor call *)
+		(* - create parametered fields for the enum *)
+		(* - add the metadata field if needed *)
+		(* - ignore any type parameter, and consider them as Dynamic (OPTIMIZEME) *)
+
+	let convert_simple_ef ctx e name ii =
+		alloc_field
+			~static:true
+			~name
+			~ftype:(mkt ~&(I32 true))
+			~kind:(KVar (Some( I ii )) )
+			~public:true
+			~vis:VPublic
+			~flags:( FPure |$ FEnum )
+			()
+
 	let convert_simple_e ctx e =
 		let i = ref 0 in
 		let fields = List.map (fun name ->
-			mk_field
-				~static:true
-				~name
-				~ftype:(mkt ~&(Int32 true))
-				~kind:(KVar (Some( I(Int32.of_int !i) )) )
-				~public:true
-				~vis:VPublic
-				~flags:( FPure |$ FEnum )
-				()
+			let ii = Int32.of_int !i in
+			incr i;
+			convert_simple_ef ctx e name ii
 		) e.e_names in
-		let c = mk_cls ~path:e.e_path ~fields () in
-		c
+		alloc_cls
+			~path:e.e_path
+			~fields
+			(* ~super:ctx.econv.enum_super *)
+			()
+
+	(* let convert_ef ctx e ef = *)
+	(* 	match follow ef.ef_type with *)
+	(* 	| TFun(args,ret) -> *)
+
+	(* let convert_complex_e ctx e = *)
+	(* 	let i = ref 0 in *)
+	(* 	let fields = List.map (fun name -> *)
+	(* 		let ii = Int32.of_int !i in *)
+	(* 		incr i; *)
+	(* 		let ef = PMap.find name e.e_constrs in *)
+
+	(* 	) e.e_name in *)
+
 
 	let is_simple_enum e =
 		not (List.exists (fun f ->
@@ -113,7 +150,11 @@ struct
 
 	let default_e2c ctx =
 		let enum_to_cls e =
-			convert_simple_e ctx e
+			if is_simple_enum e then
+				convert_simple_e ctx e
+			else
+				raise Exit
+				(* convert_complex_e ctx e *)
 		in
 		enum_to_cls
 

@@ -35,13 +35,13 @@ type valuetype =
 	| Void
 	| Bool
 	| Char
-	| Int8 of bool (* signed : bool *)
-	| Int16 of bool (* signed : bool *)
-	| Int32 of bool (* signed : bool *)
-	| Int64 of bool (* signed : bool *)
+	| I8 of bool (* signed : bool *)
+	| I16 of bool (* signed : bool *)
+	| I32 of bool (* signed : bool *)
+	| I64 of bool (* signed : bool *)
 	| IntPtr of bool (* signed : bool *)
-	| Float32
-	| Float64
+	| F32
+	| F64
 	| TypeParam of int
 	| MethodTypeParam of int
 	| Struct of cls * cparams
@@ -50,6 +50,7 @@ and ctype =
 	(* any type that has a simplified form should not be referred using the longer cls * cparams form *)
 	| String
 	| Dynamic
+	| EnumSuper
 	| Pointer of ctype
 	| Vector of ctype
 	| Array of ctype
@@ -127,6 +128,8 @@ and stat_t =
 
 and statement = {
 	s_id : int;
+	mutable s_old_id : int option;
+		(* if this statement was mapped, s_old_id will hold the parent id *)
 	mutable s_temps : var list;
 	mutable s_declared_here : var list;
 	mutable s_block : stat_t list;
@@ -148,8 +151,7 @@ and expr = {
 and const =
 	| S of string (* String *)
 	| I of int32 (* Int *)
-	| D of string (* Float *)
-	| F of string (* Single *)
+	| F of string (* Float *)
 	| B of bool
 	| Nil (* null *)
 	| This
@@ -169,6 +171,9 @@ and var = {
 		(* is it read-only? *)
 	mutable vexpr : expr option;
 	mutable vcaptured_by : func list;
+	mutable vmax : expr option;
+	mutable vmin : expr option;
+	mutable vloopvar : bool;
 }
 
 and func = {
@@ -247,8 +252,7 @@ and cls = {
 	mutable ctypes : tparam array;
 	mutable csuper : (cls * cparams) option;
 	mutable cord_fields : field list;
-	mutable cord_methods : field list;
-	mutable cfields : (string, field) PMap.t;
+	mutable cvars : (string, field) PMap.t;
 	mutable cmethods : (string, field list) PMap.t;
 	mutable cimplements : (cls * cparams) list;
 
@@ -288,6 +292,7 @@ and filter_ctx = {
 		(* maps a statement into another statement *)
 		(* the implementation assumes that it's a shallow map - *)
 		(* meaning that the inner expressions will still be mapped *)
+	stmt_map : (stat_t->stat_t) option;
 }
 
 (* all expression helpers go here *)
@@ -405,21 +410,28 @@ struct
 end;;
 
 (* boilerplate *)
-let mk_filter_ctx
+let get_id idref =
+	let i = !idref in
+	incr idref;
+	i
+
+let alloc_filter_ctx
 		?expr_map
 		?enter_stmt
 		?exit_stmt
-		?shallow_stmt_map () =
+		?shallow_stmt_map
+		?stmt_map () =
 	{
 		expr_map = expr_map;
 		enter_stmt = enter_stmt;
 		exit_stmt = exit_stmt;
 		shallow_stmt_map = shallow_stmt_map;
+		stmt_map = stmt_map;
 	}
 
 let cls_id = ref 0
 
-let mk_cls
+let alloc_cls
 		~path
 		?types
 		?super
@@ -433,8 +445,7 @@ let mk_cls
 			| _ -> true
 		) fields
 	in
-	incr cls_id;
-	let id = !cls_id in
+	let id = get_id cls_id in
 	let mapfields = List.fold_left (fun map f ->
 		assert (not (PMap.mem f.fname map));
 		PMap.add f.fname f map
@@ -453,9 +464,8 @@ let mk_cls
 		cpath = path;
 		ctypes = types;
 		csuper = super;
-		cord_fields = ord_fields;
-		cord_methods = ord_methods;
-		cfields = mapfields;
+		cord_fields = fields;
+		cvars = mapfields;
 		cmethods = methods;
 		cimplements = implements;
 
@@ -469,11 +479,12 @@ let mk_cls
 
 let null_path = ([],"<null>")
 
-let null_cls = mk_cls ~path:(null_path) ()
+let null_cls = alloc_cls ~path:(null_path) ()
 
 let add_field cls field =
 	assert (field.fdeclared == null_cls);
 	field.fdeclared <- cls;
+	cls.cord_fields <- field :: cls.cord_fields;
 	match field.fkind with
 	| KMethod _ ->
 		let v = try
@@ -481,15 +492,14 @@ let add_field cls field =
 		with | Not_found ->
 			[]
 		in
-		cls.cord_methods <- field :: cls.cord_methods;
 		cls.cmethods <- PMap.add field.fname (field :: v) cls.cmethods
 	| _ ->
-		cls.cord_fields <- field :: cls.cord_fields;
-		cls.cfields <- PMap.add field.fname field cls.cfields
+		cls.cvars <- PMap.add field.fname field cls.cvars
 
 let field_detach field =
 	let cls = field.fdeclared in
 	field.fdeclared <- null_cls;
+	cls.cord_fields <- List.filter (fun f -> f == field) cls.cord_fields;
 	match field.fkind with
 	| KMethod _ ->
 		let v = try
@@ -499,11 +509,9 @@ let field_detach field =
 		in
 		let v, rest = List.partition (fun f -> f == field) v in
 		assert (v <> []);
-		cls.cmethods <- PMap.add field.fname rest cls.cmethods;
-		cls.cord_methods <- List.filter (fun f -> f == field) cls.cord_methods
+		cls.cmethods <- PMap.add field.fname rest cls.cmethods
 	| _ ->
-		cls.cfields <- PMap.remove field.fname cls.cfields;
-		cls.cord_fields <- List.filter (fun f -> f == field) cls.cord_fields
+		cls.cvars <- PMap.remove field.fname cls.cvars
 
 let add_child ~parent ~child =
 	assert (child.tenclosing = None);
@@ -519,7 +527,7 @@ let remove_child ~parent ~child =
 
 let field_id = ref 0
 
-let mk_field
+let alloc_field
 		~static
 		~name
 		~ftype
@@ -531,8 +539,7 @@ let mk_field
 		?(modifiers = [])
 		?(declared = null_cls) () =
 
-	incr field_id;
-	let id = !field_id in
+	let id = get_id field_id in
 	let f = {
 		fid = id;
 		fname = name;
@@ -550,4 +557,39 @@ let mk_field
 		add_field declared f;
 	f
 
+let stmt_id = ref 0
 
+let alloc_stmt
+		?old_id
+		?(block=[])
+		() =
+
+	let id = get_id stmt_id in
+	{
+		s_id = id;
+		s_old_id = old_id;
+		s_temps = [];
+		s_declared_here = [];
+		s_block = block;
+	}
+
+let var_id = ref 0
+
+let alloc_var
+		~name
+		~vtype
+		?expr
+		() =
+
+	let id = get_id var_id in
+	{
+		vid = id;
+		vname = name;
+		vtype = vtype;
+		vexpr = expr;
+		vwrite = false;
+		vcaptured_by = [];
+		vmax = None;
+		vmin = None;
+		vloopvar = false;
+	}
