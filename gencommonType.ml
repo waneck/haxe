@@ -50,13 +50,12 @@ and ctype =
 	(* any type that has a simplified form should not be referred using the longer cls * cparams form *)
 	| String
 	| Dynamic
-	| EnumSuper
 	| Pointer of ct
 	| Vector of ct
 	| Array of ct
 	| Null of valuetype
 	| Fun of funprop list * ct * (ct list)
-	| Type of cls option (* Class<>; Type None means it's Class<Dynamic> *)
+	| Type of ct
 	| Inst of cls * cparams
 	| Value of valuetype
 
@@ -64,7 +63,11 @@ and pos = Ast.pos
 
 and ct = {
 	ctype : ctype;
-	cextra : unit option; (* extra flags about the type *)
+	cextra : extra_type_info option; (* extra flags about the type *)
+}
+
+and extra_type_info = {
+	et_reserved : unit;
 }
 
 and cparams = ct array
@@ -84,12 +87,13 @@ and intrinsic =
 	| IVectorDecl of ct
 	| INewVector of ct
 	| IVectorLen
+	| IUndefined
 	(* reflection *)
 	| ICreateEmpty
-	| ICreateEmptyConst of cls
+	| ICreateEmptyConst of ct
 	(* Std *)
 	| IIs
-	| IIsConst of cls
+	| IIsConst of ct
 	| IAs of ct (* warning: no value types possible *)
 	| IRethrow
 	| IGetFields
@@ -122,8 +126,8 @@ and stat_t =
 		(* switch (cond) * ( constants: statment * fallthrough:bool) * statement *)
 	| Try of statement * (var * statement) list
 	| Return of expr option
-	| Break of int
-	| Continue of int
+	| Break
+	| Continue
 	| Throw of expr
 	| SExpr of expr
 
@@ -157,7 +161,7 @@ and const =
 	| B of bool
 	| Nil (* null *)
 	| This
-	| Class of cls
+	| Class of ct
 	| Super
 
 and tfield_access =
@@ -177,8 +181,14 @@ and var = {
 		(* max value constrained *)
 	mutable vmin : expr option;
 		(* min value constrained *)
-	mutable vloopvar : bool;
+	mutable vkind : var_kind;
 }
+
+and var_kind =
+	| VUndeclared
+	| VNormal
+	| VLoopVar
+	| VFunArg
 
 and func = {
 	fargs : (var * fun_arg) list;
@@ -340,7 +350,8 @@ struct
 
 	let mkthis gen = match gen.gfield.fstatic with
 	| true ->
-		Const(Class gen.gcur) +: Type (Some gen.gcur)
+		let inst = mkt (Inst(gen.gcur, mkcls_params gen.gcur)) in
+		Const(Class inst) +: Type inst
 	| false ->
 		Const This +: Inst(gen.gcur, mkcls_params gen.gcur)
 
@@ -597,6 +608,7 @@ let var_id = ref 0
 let alloc_var
 		~name
 		~vtype
+		~kind
 		?expr
 		() =
 
@@ -610,5 +622,22 @@ let alloc_var
 		vcaptured_by = [];
 		vmax = None;
 		vmin = None;
-		vloopvar = false;
+		vkind = kind;
 	}
+
+let get_intrinsic name ct args = match name, ct.ctype, args with
+	| "__array__", Array ct, _ -> IArrayDecl ct
+	| "__vec__", Vector ct, _ -> IVectorDecl ct
+	| "__newvec__", Vector ct, _ -> INewVector ct
+	| "__veclen__", _, _ -> IVectorLen
+	| "__undefined__", _, _ -> IUndefined
+	| "__empty__", Dynamic, _ -> ICreateEmpty
+	| "__empty__", _, _ -> ICreateEmptyConst ct
+	| "__is__", _, [_, { expr = Const (Class c) }] ->
+			IIsConst c
+	| "__is__", _, _ -> IIs
+	| "__as__", _, [_, { expr = Const (Class c) }] ->
+			IAs c
+	| "__rethrow__", _, _ -> IRethrow
+	| "__fields__", _, _ -> IGetFields
+	| _ -> ICustom name

@@ -93,15 +93,18 @@ struct
 
 		(* internal props *)
 		mutable class_types : type_params;
-		mutable fun_types : type_params list;
+		mutable fun_stack : (func * type_params) list;
 			(* stack of functions *)
+		mutable var_map : (int, var) PMap.t;
 	}
-
-	let convert_type ctx = ctx.tconv.map_type
 
 	(** conversion **)
 	(*****************)
 	let cls_from_md ctx md = alloc_cls ~path:null_path ()
+
+	let ct_from_md ctx md =
+		let cls = cls_from_md ctx md in
+		mkt (Inst(cls, mkcls_params cls))
 
 	let map_params fn params =
 		Array.map fn (Array.of_list params)
@@ -116,48 +119,48 @@ struct
 		with | Not_found ->
 			let rec loop acc lst = match lst with
 				| [] -> raise Not_found
-				| hd :: tl -> try
+				| (_, hd) :: tl -> try
 					MethodTypeParam (acc, idx hd)
 				with | Not_found ->
 					loop (acc + 1) tl
 			in
-			loop 0 ctx.fun_types
+			loop 0 ctx.fun_stack
 
-	let rec convert_type ctx = function
+	let rec c_type ctx = function
 		| TMono r -> (match !r with
-			| Some t -> convert_type ctx t
+			| Some t -> c_type ctx t
 			| _ -> mkt Dynamic)
 		| TLazy f ->
-			convert_type ctx (!f())
+			c_type ctx (!f())
 		| TType (t,tl) -> (match follow (TType(t,tl)) with
 			| TAnon a ->
 				ctx.aconv.anon_to_ct (TType(t,tl))
 			| _ ->
-				convert_type ctx (apply_params t.t_types tl t.t_type))
+				c_type ctx (apply_params t.t_types tl t.t_type))
 		| TAnon a -> (match !(a.a_status) with
 			| Statics c ->
-				mkt (Type (Some (cls_from_md ctx (TClassDecl c))) )
+				mkt (Type (ct_from_md ctx (TClassDecl c)) )
 			| EnumStatics c ->
-				mkt (Type (Some (cls_from_md ctx (TEnumDecl c))) )
+				mkt (Type (ct_from_md ctx (TEnumDecl c)) )
 			| AbstractStatics a ->
-				mkt (Type (Some (cls_from_md ctx (TAbstractDecl a))) )
+				mkt (Type (ct_from_md ctx (TAbstractDecl a)) )
 			| _ ->
 				ctx.aconv.anon_to_ct (TAnon a))
 		| TInst(({ cl_kind = KTypeParameter _ } as ctp),_) ->
 			mkt ~&(lookup_tparam ctx ctp)
 		| TInst(c,p) when Meta.has Meta.Struct c.cl_meta ->
-			mkt ~&(Struct(cls_from_md ctx (TClassDecl c), map_params (convert_type ctx) p))
+			mkt ~&(Struct(cls_from_md ctx (TClassDecl c), map_params (c_type ctx) p))
 		| TInst(c,p) ->
-			mkt (Inst(cls_from_md ctx (TClassDecl c), map_params (convert_type ctx) p))
+			mkt (Inst(cls_from_md ctx (TClassDecl c), map_params (c_type ctx) p))
 		| TEnum(e,p) ->
 			ctx.econv.enum_to_ct (TEnum(e,p))
 		| TFun(args,ret) ->
 			(* when converting type from methods, take care to eliminate VarFunc *)
-			mkt (Fun( [VarFunc], convert_type ctx ret, List.map (fun (n,o,t) ->
-				convert_type ctx t
+			mkt (Fun( [VarFunc], c_type ctx ret, List.map (fun (n,o,t) ->
+				c_type ctx t
 			) args ))
 		| TAbstract( ({ a_impl = Some _ } as a),p) ->
-			convert_type ctx (Codegen.Abstract.get_underlying_type a p)
+			c_type ctx (Codegen.Abstract.get_underlying_type a p)
 		| TDynamic _ -> mkt Dynamic
 		(* core type *)
 		| TAbstract(a,p) -> mkt (try match a.a_path with
@@ -182,29 +185,87 @@ struct
 					| [p] -> p
 					| _ -> raise Not_found
 				in
-				Pointer(convert_type ctx p)
+				Pointer(c_type ctx p)
 			| _ -> raise Not_found
 		with | Not_found ->
 			ctx.ccom.error ("Unknown core type: " ^ (path_s a.a_path)) a.a_pos;
 			assert false)
 
-	(* and convert_type_internal ctx = function *)
+	let c_const ctx = function
+		| TInt i -> I i
+		| TFloat f -> F f
+		| TString s -> S s
+		| TBool b -> B b
+		| TNull -> Nil
+		| TThis -> This
+		| TSuper -> Super
 
+	let c_var ctx v = try
+		PMap.find v.v_id ctx.var_map
+	with | Not_found ->
+		let vconv = GencommonType.alloc_var
+			~name:v.v_name
+			~vtype:(c_type ctx v.v_type)
+			~kind:VUndeclared (* Not_found here always means it's undeclared *)
+			()
+		in
+		ctx.var_map <- PMap.add v.v_id vconv ctx.var_map;
+		vconv
 
-(* 	let create_ctx com eload econv aconv tconv = *)
-(* 		let gen = { *)
-(* 			gcom = com; *)
-(* 			gfield = null_field; *)
-(* 			gcur = null_cls; *)
-(* 			filters = []; *)
-(* 			filters_dirty = false; *)
-(* 		} in *)
-(* 		{ *)
-(* 			ccom = com; *)
-(* 			cgen = gen; *)
-(* 			load_type = *)
-(* 		} *)
+	let is_intrinsic name =
+		String.length name > 2 &&
+		String.get name 0 = '_' &&
+		String.get name 1 = '_'
 
+	let rec c_expr ctx ?stype e = match e.eexpr with
+		| TConst c -> Const( c_const ctx c ) ++ (c_type ctx e.etype) @@ e.epos
+		| TLocal v -> (try
+			let vconv = try
+					PMap.find v.v_id ctx.var_map
+				with | Not_found when not (is_intrinsic v.v_name) -> (* check if intrinsic *)
+					let vconv = GencommonType.alloc_var
+						~name:v.v_name
+						~vtype:(c_type ctx v.v_type)
+						~kind:VUndeclared (* Not_found here always means it's undeclared *)
+						()
+					in
+					ctx.var_map <- PMap.add v.v_id vconv ctx.var_map;
+					vconv
+				in
+				(* Local will always have the same type as v.v_type *)
+				Local vconv ++ vconv.vtype @@ e.epos
+			with | Not_found ->
+				let t = c_type ctx v.v_type in
+				Intrinsic (get_intrinsic v.v_name t [], []) ++ t @@ e.epos)
+		(* | TArray (e1,e2) -> *)
+			(* let e1a = *)
+		| _ -> assert false
+		(* | TArray of texpr * texpr *)
+		(* | TBinop of Ast.binop * texpr * texpr *)
+		(* | TField of texpr * tfield_access *)
+		(* | TTypeExpr of module_type *)
+		(* | TParenthesis of texpr *)
+		(* | TObjectDecl of (string * texpr) list *)
+		(* | TArrayDecl of texpr list *)
+		(* | TCall of texpr * texpr list *)
+		(* | TNew of tclass * tparams * texpr list *)
+		(* | TUnop of Ast.unop * Ast.unop_flag * texpr *)
+		(* | TFunction of tfunc *)
+		(* | TVars of (tvar * texpr option) list *)
+		(* | TBlock of texpr list *)
+		(* | TFor of tvar * texpr * texpr *)
+		(* | TIf of texpr * texpr * texpr option *)
+		(* | TWhile of texpr * texpr * Ast.while_flag *)
+		(* | TSwitch of texpr * (texpr list * texpr) list * texpr option *)
+		(* | TPatMatch of decision_tree *)
+		(* | TTry of texpr * (tvar * texpr) list *)
+		(* | TReturn of texpr option *)
+		(* | TBreak *)
+		(* | TContinue *)
+		(* | TThrow of texpr *)
+		(* | TCast of texpr * module_type option *)
+		(* | TMeta of metadata_entry * texpr *)
+		(* | TEnumParameter of texpr * tenum_field * int *)
 
 	(** default implementations **)
 	(*****************************)
