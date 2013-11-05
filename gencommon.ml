@@ -135,6 +135,9 @@ struct
 			| _ -> mkt Dynamic)
 		| TLazy f ->
 			c_type ctx (!f())
+		| TType ({ t_path = [],"Null" }, [t]) -> (match c_type ctx t with
+			| { ctype = Value(v) } -> mkt (Null v)
+			| t -> t)
 		| TType (t,tl) -> (match follow (TType(t,tl)) with
 			| TAnon a ->
 				ctx.aconv.anon_to_ct (TType(t,tl))
@@ -151,6 +154,12 @@ struct
 				ctx.aconv.anon_to_ct (TAnon a))
 		| TInst(({ cl_kind = KTypeParameter _ } as ctp),_) ->
 			mkt ~&(lookup_tparam ctx ctp)
+		| TInst({ cl_path = [],"Array" }, [t]) ->
+			mkt (Array (c_type ctx t))
+		| TInst({ cl_path = [],"String" }, []) ->
+			mkt String
+		| TInst({ cl_path = _,"NativeArray" }, [t]) ->
+			mkt (Vector (c_type ctx t))
 		| TInst(c,p) when Meta.has Meta.Struct c.cl_meta ->
 			mkt ~&(Struct(cls_from_md ctx (TClassDecl c), map_params (c_type ctx) p))
 		| TInst(c,p) ->
