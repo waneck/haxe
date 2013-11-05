@@ -67,6 +67,7 @@ and ct = {
 }
 
 and extra_type_info = {
+	(* put here everything that we'd instead use abstracts or typedefs to annotate *)
 	et_reserved : unit;
 }
 
@@ -104,12 +105,13 @@ and intrinsic =
 and expr_expr =
 	| Const of const
 	| Local of var
-	| Cast of expr * ct
+	| Cast of expr * ct * bool
+		(* expr * ct * safe_cast : determines if a cast is safe (related types) *)
 
 	| FieldAcc of expr * tfield_access
 	| StaticAcc of tfield_access
 	| Call of expr * expr list
-	| ArrayAcc of expr * expr
+	| ArrayAcc of expr * expr * array_access
 
 	| IfVal of expr * expr * expr
 	| Binop of binop * expr * expr
@@ -168,6 +170,12 @@ and tfield_access =
 	| AClassField of field_access
 	(* | ATypedExternal of ct *)
 	| ADynamic of ct * bool (* bool determines if it should throw exceptions on type not found *)
+
+and array_access =
+	| ArrClassField of field_access
+		(* by convention, we will look for the __array property. *)
+	| ArrNotFound
+	| ArrDynamic of ct
 
 and var = {
 	vid : int;
@@ -641,3 +649,6 @@ let get_intrinsic name ct args = match name, ct.ctype, args with
 	| "__rethrow__", _, _ -> IRethrow
 	| "__fields__", _, _ -> IGetFields
 	| _ -> ICustom name
+
+(* FIXME: implement this *)
+let cast_if_needed ctx to_ct expr = expr

@@ -92,6 +92,8 @@ struct
 		mutable tconv : type_conversion;
 
 		(* internal props *)
+		mutable cur_class : tclass;
+		mutable cur_field : tclass_field option;
 		mutable class_types : type_params;
 		mutable fun_stack : (func * type_params) list;
 			(* stack of functions *)
@@ -100,6 +102,7 @@ struct
 
 	(** conversion **)
 	(*****************)
+	(* FIXME TODO IMPLEMENTME *)
 	let cls_from_md ctx md = alloc_cls ~path:null_path ()
 
 	let ct_from_md ctx md =
@@ -151,6 +154,7 @@ struct
 		| TInst(c,p) when Meta.has Meta.Struct c.cl_meta ->
 			mkt ~&(Struct(cls_from_md ctx (TClassDecl c), map_params (c_type ctx) p))
 		| TInst(c,p) ->
+			(* FIXME: implement special types: e.g. Array *)
 			mkt (Inst(cls_from_md ctx (TClassDecl c), map_params (c_type ctx) p))
 		| TEnum(e,p) ->
 			ctx.econv.enum_to_ct (TEnum(e,p))
@@ -237,16 +241,35 @@ struct
 			with | Not_found ->
 				let t = c_type ctx v.v_type in
 				Intrinsic (get_intrinsic v.v_name t [], []) ++ t @@ e.epos)
-		(* | TArray (e1,e2) -> *)
-			(* let e1a = *)
+		| TTypeExpr md ->
+			let ct = ct_from_md ctx md in
+			Const( Class ct ) +: Type ct @@ e.epos
+		| TParenthesis e ->
+			(* we completely ignore parenthesis : *)
+			(* take everything that needs pattern matching recursion *)
+			c_expr ctx e
+		| TObjectDecl _ ->
+			let site = match ctx.cur_field with
+				| None -> ASite (ClassSite( TClassDecl ctx.cur_class ))
+				| Some f when f.cf_name = "__meta__" ->
+						AMeta( TClassDecl ctx.cur_class ) (* FIXME: how to represent meta of enums? *)
+				| Some f -> ASite(FieldSite( TClassDecl ctx.cur_class, f))
+			in
+			ctx.aconv.anon_objdecl site e
+		| TArrayDecl decl ->
+			let ct = c_type ctx e.etype in
+			let base_t = match ct.ctype with
+				| Array t -> t
+				| _ -> assert false
+			in
+			let convert e =
+				cast_if_needed ctx base_t (c_expr ctx e)
+			in
+			Intrinsic( IArrayDecl(base_t) , List.map convert decl ) ++ ct @@ e.epos
 		| _ -> assert false
 		(* | TArray of texpr * texpr *)
 		(* | TBinop of Ast.binop * texpr * texpr *)
 		(* | TField of texpr * tfield_access *)
-		(* | TTypeExpr of module_type *)
-		(* | TParenthesis of texpr *)
-		(* | TObjectDecl of (string * texpr) list *)
-		(* | TArrayDecl of texpr list *)
 		(* | TCall of texpr * texpr list *)
 		(* | TNew of tclass * tparams * texpr list *)
 		(* | TUnop of Ast.unop * Ast.unop_flag * texpr *)
