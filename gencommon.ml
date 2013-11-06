@@ -98,6 +98,7 @@ struct
 		mutable fun_stack : (func * type_params) list;
 			(* stack of functions *)
 		mutable var_map : (int, var) PMap.t;
+		mutable legal_metas : (Meta.strict_meta, Ast.expr list -> intrinsic * ct) PMap.t;
 	}
 
 	(** conversion **)
@@ -310,8 +311,16 @@ struct
 			let t = c_type ctx e.etype in
 			let ex1 = c_expr ctx e1 in
 			Cast(ex1, if et = None then UnsafeCast else SafeCast) ++ t @@ e.epos
+		| TMeta ((m,el,_),e1) ->
+			let ex1 = c_expr ctx e1 in
+			let ct = c_type ctx e.etype in
+			(try
+				let fn = PMap.find m ctx.legal_metas in
+				let isic, ct = fn el in
+				cast_if_needed ctx ct (Intrinsic (isic, [ex1]) ++ ct @@ e.epos)
+			with | Not_found ->
+				cast_if_needed ctx ct ex1)
 		(* | TIf of texpr * texpr * texpr option *)
-		(* | TMeta of metadata_entry * texpr *)
 		(* | TEnumParameter of texpr * tenum_field * int *)
 		| _ -> assert false
 		(* | TBinop of Ast.binop * texpr * texpr *)
