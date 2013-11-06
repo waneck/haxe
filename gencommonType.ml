@@ -365,6 +365,8 @@ struct
 		cextra = None;
 	}
 
+	let bool_t = mktv Bool
+
 	type typed_expr = expr_expr * ct
 
 	(* position operator. read as 'at pos' *)

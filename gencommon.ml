@@ -59,6 +59,7 @@ struct
 		enum_field_acc : texpr -> tfield_access;
 			(* texpr will be either a TField or a TCall( TField, _ ) *)
 		enum_to_ct : t -> ct;
+		enum_param_get : texpr -> tenum_field -> int -> expr;
 	}
 
 	and anon_conversion = {
@@ -312,6 +313,7 @@ struct
 			let ex1 = c_expr ctx e1 in
 			Cast(ex1, if et = None then UnsafeCast else SafeCast) ++ t @@ e.epos
 		| TMeta ((m,el,_),e1) ->
+			(* there's a problem here if the TMeta is expected to be a statement *)
 			let ex1 = c_expr ctx e1 in
 			let ct = c_type ctx e.etype in
 			(try
@@ -320,8 +322,14 @@ struct
 				cast_if_needed ctx ct (Intrinsic (isic, [ex1]) ++ ct @@ e.epos)
 			with | Not_found ->
 				cast_if_needed ctx ct ex1)
-		(* | TIf of texpr * texpr * texpr option *)
-		(* | TEnumParameter of texpr * tenum_field * int *)
+		| TEnumParameter (e1,ef,i) ->
+			ctx.econv.enum_param_get e1 ef i
+		| TIf (econd,eif, Some(eelse)) ->
+			let ct = c_type ctx e.etype in
+			let excond = cast_if_needed ctx bool_t (c_expr ctx econd) in
+			let ex1 = cast_if_needed ctx ct (c_expr ctx eif) in
+			let ex2 = cast_if_needed ctx ct (c_expr ctx eelse) in
+			IfVal(excond,ex1,ex2) ++ ct @@ e.epos
 		| _ -> assert false
 		(* | TBinop of Ast.binop * texpr * texpr *)
 		(* | TField of texpr * tfield_access *)
