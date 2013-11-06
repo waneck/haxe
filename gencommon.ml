@@ -306,8 +306,11 @@ struct
 				| _ -> mktr Dynamic, ArrDynamic (c_type ctx e.etype)
 			in
 			cast_if_needed ctx expected (ArrayAcc (ex1,ex2,acc) ++ t @@ e.epos)
+		| TCast (e1,et) ->
+			let t = c_type ctx e.etype in
+			let ex1 = c_expr ctx e1 in
+			Cast(ex1, if et = None then UnsafeCast else SafeCast) ++ t @@ e.epos
 		(* | TIf of texpr * texpr * texpr option *)
-		(* | TCast of texpr * module_type option *)
 		(* | TMeta of metadata_entry * texpr *)
 		(* | TEnumParameter of texpr * tenum_field * int *)
 		| _ -> assert false
