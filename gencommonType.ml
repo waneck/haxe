@@ -59,14 +59,17 @@ and reftype =
 
 and ctype =
 	| R of reftype
+		(* reference type *)
 	| V of valuetype
-	| SpecializedNull of ctype
+		(* value type *)
+	| Null of valuetype
+		(* Null<> type *)
+	| SpecializedNull of ct
 		(* this type should be "ephemeral": it should only appear in type parameters *)
 		(* or as a return-type or paremeter of a specialized function. *)
 		(* It indicates that the type was a result of a specialized Null<TypeParameter> type *)
 		(* under any other condition, the type should be replaced by the actual `ctype`, as Null<ReferenceType> *)
 		(* should be the same as ReferenceType *)
-	| Null of valuetype
 
 and pos = Ast.pos
 
@@ -360,7 +363,8 @@ struct
 
 	(* typed expression operator. read as 'typed with type' *)
 	let (+:) e t = (e, mkt t)
-	let ( *: ) e t = (e, mktr t)
+	let (+*) e t = (e, mktr t)
+	let (+&) e t = (e, mktv t)
 
 	(* value type unary *)
 	let (~&) t = V t
@@ -377,9 +381,9 @@ struct
 	let mkthis gen = match gen.gfield.fstatic with
 	| true ->
 		let inst = mktr (Inst(gen.gcur, mkcls_params gen.gcur)) in
-		Const(Class inst) *: Type inst
+		Const(Class inst) +* Type inst
 	| false ->
-		Const This *: Inst(gen.gcur, mkcls_params gen.gcur)
+		Const This +* Inst(gen.gcur, mkcls_params gen.gcur)
 
 	let combine_cextra cextra_orig cextra = match cextra_orig, cextra with
 		| None, None -> None
@@ -387,27 +391,48 @@ struct
 		| Some{ et_reserved = _ }, None -> None
 		| Some{ et_reserved = _ }, Some { et_reserved = _ } -> None
 
-	let rec apply_cparams cls params ct = match ct.ctype with
+	let combine_ct_cextra ct cextra_orig =
+		let combined = combine_cextra cextra_orig ct.cextra in
+		if combined = ct.cextra then
+			ct
+		else
+			{ ct with cextra = combined }
+
+	let rec ensure_toplevel ct = match ct.ctype with
+		| SpecializedNull n -> combine_ct_cextra (ensure_toplevel n) ct.cextra
+		| t -> ct
+
+	let rec apply_cparams ?(toplevel=true) cls params ct = match ct.ctype with
 		| V( Struct (c,p) ) ->
-			{ ct with ctype = V( Struct(c, Array.map (apply_cparams cls params) p) ) }
+			{ ct with ctype = V( Struct(c, Array.map (apply_cparams ~toplevel:false cls params) p) ) }
 		| V( TypeParam i ) ->
 			let ret = params.(i) in
-			{ ret with cextra = combine_cextra ct.cextra ret.cextra }
-		| Null( TypeParam i ) -> (match params.(i) with
-			| { ctype = V v; cextra = e } -> { ctype = Null( v ); cextra = combine_cextra ct.cextra e }
-			| v -> { v with cextra = combine_cextra ct.cextra v.cextra })
+			combine_ct_cextra ret ct.cextra
+		| Null( TypeParam i ) -> (match toplevel, params.(i) with
+			| true, { ctype = V v; cextra = e } ->
+				{ ctype = Null( v ); cextra = combine_cextra ct.cextra e }
+			| false, r ->
+				{ ctype = SpecializedNull( r ); cextra = combine_cextra ct.cextra r.cextra }
+			| true, v ->
+				ensure_toplevel v)
 		| R(Fun(pl,ret,args)) ->
-			{ ct with ctype = ~*(Fun(pl,apply_cparams cls params ret, List.map (apply_cparams cls params) args)) }
+			{ ct with ctype = ~*(Fun(pl,apply_cparams ~toplevel:false cls params ret, List.map (apply_cparams ~toplevel:false cls params) args)) }
 		| R(Pointer p) ->
-			{ ct with ctype = ~*(Pointer(apply_cparams cls params p)) }
+			{ ct with ctype = ~*(Pointer(apply_cparams ~toplevel:false cls params p)) }
 		| R(Vector v) ->
-			{ ct with ctype = ~*(Vector(apply_cparams cls params v)) }
+			{ ct with ctype = ~*(Vector(apply_cparams ~toplevel:false cls params v)) }
 		| R(Array v) ->
-			{ ct with ctype = ~*(Array(apply_cparams cls params v)) }
+			{ ct with ctype = ~*(Array(apply_cparams ~toplevel:false cls params v)) }
 		| R(Type v) ->
-			{ ct with ctype = ~*(Type(apply_cparams cls params v)) }
+			{ ct with ctype = ~*(Type(apply_cparams ~toplevel:false cls params v)) }
 		| R(Inst(c,p)) ->
-			{ ct with ctype = ~*(Inst(c, Array.map (apply_cparams cls params) p)) }
+			{ ct with ctype = ~*(Inst(c, Array.map (apply_cparams ~toplevel:false cls params) p)) }
+		| SpecializedNull(t) ->
+			if toplevel then
+				ensure_toplevel t
+			else
+				let ret = apply_cparams ~toplevel:false cls params t in
+				{ ct with ctype = SpecializedNull(ret) }
 		| v -> ct
 
 

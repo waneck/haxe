@@ -263,7 +263,7 @@ struct
 				Intrinsic (get_intrinsic v.v_name t [], []) ++ t @@ e.epos)
 		| TTypeExpr md ->
 			let ct = ct_from_md ctx md in
-			Const( Class ct ) *: Type ct @@ e.epos
+			Const( Class ct ) +* Type ct @@ e.epos
 		| TParenthesis e ->
 			(* we completely ignore parenthesis *)
 			c_expr ctx e
