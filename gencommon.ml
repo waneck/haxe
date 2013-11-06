@@ -107,7 +107,7 @@ struct
 
 	let ct_from_md ctx md =
 		let cls = cls_from_md ctx md in
-		mkt (Inst(cls, mkcls_params cls))
+		mktr (Inst(cls, mkcls_params cls))
 
 	let map_params fn params =
 		Array.map fn (Array.of_list params)
@@ -129,14 +129,21 @@ struct
 			in
 			loop 0 ctx.fun_stack
 
-	let rec c_type ctx = function
+	let rec get_cparams ctx site tparams =
+		match ctx.tconv.map_params with
+		| None ->
+			Array.of_list (List.map (c_type ctx) tparams)
+		| Some m ->
+			m site tparams
+
+	and c_type ctx = function
 		| TMono r -> (match !r with
 			| Some t -> c_type ctx t
-			| _ -> mkt Dynamic)
+			| _ -> mktr Dynamic)
 		| TLazy f ->
 			c_type ctx (!f())
 		| TType ({ t_path = [],"Null" }, [t]) -> (match c_type ctx t with
-			| { ctype = Value(v) } -> mkt (Null v)
+			| { ctype = V(v) } -> mkt (Null v)
 			| t -> t)
 		| TType (t,tl) -> (match follow (TType(t,tl)) with
 			| TAnon a ->
@@ -145,36 +152,40 @@ struct
 				c_type ctx (apply_params t.t_types tl t.t_type))
 		| TAnon a -> (match !(a.a_status) with
 			| Statics c ->
-				mkt (Type (ct_from_md ctx (TClassDecl c)) )
+				mktr (Type (ct_from_md ctx (TClassDecl c)) )
 			| EnumStatics c ->
-				mkt (Type (ct_from_md ctx (TEnumDecl c)) )
+				mktr (Type (ct_from_md ctx (TEnumDecl c)) )
 			| AbstractStatics a ->
-				mkt (Type (ct_from_md ctx (TAbstractDecl a)) )
+				mktr (Type (ct_from_md ctx (TAbstractDecl a)) )
 			| _ ->
 				ctx.aconv.anon_to_ct (TAnon a))
 		| TInst(({ cl_kind = KTypeParameter _ } as ctp),_) ->
 			mkt ~&(lookup_tparam ctx ctp)
-		| TInst({ cl_path = [],"Array" }, [t]) ->
-			mkt (Array (c_type ctx t))
+		| TInst({ cl_path = [],"Array" } as c, [t]) ->
+			let ct = (get_cparams ctx (ClassSite (TClassDecl c)) [t]).(0) in
+			mktr (Array ct)
 		| TInst({ cl_path = [],"String" }, []) ->
-			mkt String
-		| TInst({ cl_path = _,"NativeArray" }, [t]) ->
-			mkt (Vector (c_type ctx t))
+			mktr String
+		| TInst({ cl_path = _,"NativeArray" } as c, [t]) ->
+			let site = ClassSite (TClassDecl c) in
+			let ct = (get_cparams ctx site [t]).(0) in
+			mktr (Vector ct)
 		| TInst(c,p) when Meta.has Meta.Struct c.cl_meta ->
-			mkt ~&(Struct(cls_from_md ctx (TClassDecl c), map_params (c_type ctx) p))
+			let site = ClassSite (TClassDecl c) in
+			mkt ~&(Struct(cls_from_md ctx (TClassDecl c), get_cparams ctx site p))
 		| TInst(c,p) ->
-			(* FIXME: implement special types: e.g. Array *)
-			mkt (Inst(cls_from_md ctx (TClassDecl c), map_params (c_type ctx) p))
+			let site = ClassSite (TClassDecl c) in
+			mktr (Inst(cls_from_md ctx (TClassDecl c), get_cparams ctx site p))
 		| TEnum(e,p) ->
 			ctx.econv.enum_to_ct (TEnum(e,p))
 		| TFun(args,ret) ->
 			(* when converting type from methods, take care to eliminate VarFunc *)
-			mkt (Fun( [VarFunc], c_type ctx ret, List.map (fun (n,o,t) ->
+			mktr (Fun( [VarFunc], c_type ctx ret, List.map (fun (n,o,t) ->
 				c_type ctx t
 			) args ))
 		| TAbstract( ({ a_impl = Some _ } as a),p) ->
 			c_type ctx (Codegen.Abstract.get_underlying_type a p)
-		| TDynamic _ -> mkt Dynamic
+		| TDynamic _ -> mktr Dynamic
 		(* core type *)
 		| TAbstract(a,p) -> mkt (try match a.a_path with
 			| [],"Int" -> ~&(I32 true)
@@ -198,7 +209,7 @@ struct
 					| [p] -> p
 					| _ -> raise Not_found
 				in
-				Pointer(c_type ctx p)
+				R(Pointer(c_type ctx p))
 			| _ -> raise Not_found
 		with | Not_found ->
 			ctx.ccom.error ("Unknown core type: " ^ (path_s a.a_path)) a.a_pos;
@@ -252,10 +263,9 @@ struct
 				Intrinsic (get_intrinsic v.v_name t [], []) ++ t @@ e.epos)
 		| TTypeExpr md ->
 			let ct = ct_from_md ctx md in
-			Const( Class ct ) +: Type ct @@ e.epos
+			Const( Class ct ) *: Type ct @@ e.epos
 		| TParenthesis e ->
-			(* we completely ignore parenthesis : *)
-			(* take everything that needs pattern matching recursion *)
+			(* we completely ignore parenthesis *)
 			c_expr ctx e
 		| TObjectDecl _ ->
 			let site = match ctx.cur_field with
@@ -268,15 +278,28 @@ struct
 		| TArrayDecl decl ->
 			let ct = c_type ctx e.etype in
 			let base_t = match ct.ctype with
-				| Array t -> t
+				| R(Array t) -> t
 				| _ -> assert false
 			in
 			let convert e =
 				cast_if_needed ctx base_t (c_expr ctx e)
 			in
 			Intrinsic( IArrayDecl(base_t) , List.map convert decl ) ++ ct @@ e.epos
+		(* | TArray (e1,e2) -> *)
+		(* 	let ex1 = c_expr ctx e1 in *)
+		(* 	let ex2 = c_expr ctx e2 in *)
+		(* 	let t = match ex1.t.ctype with *)
+		(* 		| Pointer ct | Array ct | Vector ct -> ct *)
+		(* 		| Inst(c,p) | V(Struct(c,p)) *)
+		(* 		| Null(Struct(c,p)) -> (try *)
+		(* 			let f = PMap.find "__array" c.cvars in *)
+
+
+		(* | TIf of texpr * texpr * texpr option *)
+		(* | TCast of texpr * module_type option *)
+		(* | TMeta of metadata_entry * texpr *)
+		(* | TEnumParameter of texpr * tenum_field * int *)
 		| _ -> assert false
-		(* | TArray of texpr * texpr *)
 		(* | TBinop of Ast.binop * texpr * texpr *)
 		(* | TField of texpr * tfield_access *)
 		(* | TCall of texpr * texpr list *)
@@ -286,7 +309,6 @@ struct
 		(* | TVars of (tvar * texpr option) list *)
 		(* | TBlock of texpr list *)
 		(* | TFor of tvar * texpr * texpr *)
-		(* | TIf of texpr * texpr * texpr option *)
 		(* | TWhile of texpr * texpr * Ast.while_flag *)
 		(* | TSwitch of texpr * (texpr list * texpr) list * texpr option *)
 		(* | TPatMatch of decision_tree *)
@@ -295,9 +317,6 @@ struct
 		(* | TBreak *)
 		(* | TContinue *)
 		(* | TThrow of texpr *)
-		(* | TCast of texpr * module_type option *)
-		(* | TMeta of metadata_entry * texpr *)
-		(* | TEnumParameter of texpr * tenum_field * int *)
 
 	(** default implementations **)
 	(*****************************)

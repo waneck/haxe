@@ -46,18 +46,27 @@ type valuetype =
 	| MethodTypeParam of int * int (* function stack * type param number *)
 	| Struct of cls * cparams
 
-and ctype =
+and reftype =
 	(* any type that has a simplified form should not be referred using the longer cls * cparams form *)
 	| String
 	| Dynamic
 	| Pointer of ct
 	| Vector of ct
 	| Array of ct
-	| Null of valuetype
-	| Fun of funprop list * ct * (ct list)
 	| Type of ct
 	| Inst of cls * cparams
-	| Value of valuetype
+	| Fun of funprop list * ct * (ct list)
+
+and ctype =
+	| R of reftype
+	| V of valuetype
+	| SpecializedNull of ctype
+		(* this type should be "ephemeral": it should only appear in type parameters *)
+		(* or as a return-type or paremeter of a specialized function. *)
+		(* It indicates that the type was a result of a specialized Null<TypeParameter> type *)
+		(* under any other condition, the type should be replaced by the actual `ctype`, as Null<ReferenceType> *)
+		(* should be the same as ReferenceType *)
+	| Null of valuetype
 
 and pos = Ast.pos
 
@@ -330,8 +339,13 @@ struct
 		cextra = None;
 	}
 
-	let mkt_vt vt = {
-		ctype = Value vt;
+	let mktr r = {
+		ctype = R r;
+		cextra = None;
+	}
+
+	let mktv vt = {
+		ctype = V vt;
 		cextra = None;
 	}
 
@@ -346,22 +360,56 @@ struct
 
 	(* typed expression operator. read as 'typed with type' *)
 	let (+:) e t = (e, mkt t)
+	let ( *: ) e t = (e, mktr t)
 
 	(* value type unary *)
-	let (~&) t = Value t
+	let (~&) t = V t
+
+	(* ref type unary *)
+	let (~*) t = R t
 
 	let sample_expr p : expr =
-		Binop(OpAdd, Const(S"Hello, ") +: String @@ p, Const(S"World!") +: String @@ p) +: String @@ p
+		Binop(OpAdd, Const(S"Hello, ") +: ~*String @@ p, Const(S"World!") +: ~*String @@ p) +: ~*String @@ p
 
 	let mkcls_params cls =
 		Array.init (Array.length cls.ctypes) (fun i -> mkt ~&(TypeParam i))
 
 	let mkthis gen = match gen.gfield.fstatic with
 	| true ->
-		let inst = mkt (Inst(gen.gcur, mkcls_params gen.gcur)) in
-		Const(Class inst) +: Type inst
+		let inst = mktr (Inst(gen.gcur, mkcls_params gen.gcur)) in
+		Const(Class inst) *: Type inst
 	| false ->
-		Const This +: Inst(gen.gcur, mkcls_params gen.gcur)
+		Const This *: Inst(gen.gcur, mkcls_params gen.gcur)
+
+	let combine_cextra cextra_orig cextra = match cextra_orig, cextra with
+		| None, None -> None
+		| None, Some{ et_reserved = _ } -> None
+		| Some{ et_reserved = _ }, None -> None
+		| Some{ et_reserved = _ }, Some { et_reserved = _ } -> None
+
+	let rec apply_cparams cls params ct = match ct.ctype with
+		| V( Struct (c,p) ) ->
+			{ ct with ctype = V( Struct(c, Array.map (apply_cparams cls params) p) ) }
+		| V( TypeParam i ) ->
+			let ret = params.(i) in
+			{ ret with cextra = combine_cextra ct.cextra ret.cextra }
+		| Null( TypeParam i ) -> (match params.(i) with
+			| { ctype = V v; cextra = e } -> { ctype = Null( v ); cextra = combine_cextra ct.cextra e }
+			| v -> { v with cextra = combine_cextra ct.cextra v.cextra })
+		| R(Fun(pl,ret,args)) ->
+			{ ct with ctype = ~*(Fun(pl,apply_cparams cls params ret, List.map (apply_cparams cls params) args)) }
+		| R(Pointer p) ->
+			{ ct with ctype = ~*(Pointer(apply_cparams cls params p)) }
+		| R(Vector v) ->
+			{ ct with ctype = ~*(Vector(apply_cparams cls params v)) }
+		| R(Array v) ->
+			{ ct with ctype = ~*(Array(apply_cparams cls params v)) }
+		| R(Type v) ->
+			{ ct with ctype = ~*(Type(apply_cparams cls params v)) }
+		| R(Inst(c,p)) ->
+			{ ct with ctype = ~*(Inst(c, Array.map (apply_cparams cls params) p)) }
+		| v -> ct
+
 
 end;;
 
@@ -634,12 +682,12 @@ let alloc_var
 	}
 
 let get_intrinsic name ct args = match name, ct.ctype, args with
-	| "__array__", Array ct, _ -> IArrayDecl ct
-	| "__vec__", Vector ct, _ -> IVectorDecl ct
-	| "__newvec__", Vector ct, _ -> INewVector ct
+	| "__array__", R(Array ct), _ -> IArrayDecl ct
+	| "__vec__", R(Vector ct), _ -> IVectorDecl ct
+	| "__newvec__", R(Vector ct), _ -> INewVector ct
 	| "__veclen__", _, _ -> IVectorLen
 	| "__undefined__", _, _ -> IUndefined
-	| "__empty__", Dynamic, _ -> ICreateEmpty
+	| "__empty__", R Dynamic, _ -> ICreateEmpty
 	| "__empty__", _, _ -> ICreateEmptyConst ct
 	| "__is__", _, [_, { expr = Const (Class c) }] ->
 			IIsConst c
