@@ -117,8 +117,7 @@ and intrinsic =
 and expr_expr =
 	| Const of const
 	| Local of var
-	| Cast of expr * ct * bool
-		(* expr * ct * safe_cast : determines if a cast is safe (related types) *)
+	| Cast of expr * cast_safety
 
 	| FieldAcc of expr * tfield_access
 	| StaticAcc of tfield_access
@@ -136,8 +135,7 @@ and stat_t =
 	| VarDecl of var * expr option
 	| If of expr * statement * statement option
 	| While of expr * statement * Ast.while_flag
-	| Switch of expr * (const list * statement * bool) list * statement option
-		(* switch (cond) * ( constants: statment * fallthrough:bool) * statement *)
+	| Switch of expr * (const list * statement * switch_case_flag) list * statement option
 	| Try of statement * (var * statement) list
 	| Return of expr option
 	| Break
@@ -156,10 +154,24 @@ and statement = {
 
 and field_access = {
 	a_field : field;
-	a_parent : ct;
-	a_type : ct;
+		(* accessed field *)
+	(* a_expected : ct; *)
+		(* TODO: the expected type as defined by the original texpr *)
+	(* a_actual : ct; *)
+		(* TODO: the actual type, with the applied params *)
 	a_params : ct array;
+		(* applied function type parameters for this function access *)
 }
+
+and cast_safety =
+	| SafeCast
+		(* cast(a, SomeType) -> needs runtime check *)
+	| UnsafeCast
+		(* var b:SomeType = cast a; -> doesn't need runtime check *)
+
+and switch_case_flag =
+	| NormalCase
+	| Fallthrough
 
 and expr = {
 	expr : expr_expr;
@@ -184,6 +196,7 @@ and tfield_access =
 	| ADynamic of ct * bool (* bool determines if it should throw exceptions on type not found *)
 
 and array_access =
+	| ArrBuiltin
 	| ArrClassField of field_access
 		(* by convention, we will look for the __array property. *)
 	| ArrNotFound

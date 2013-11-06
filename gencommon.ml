@@ -241,6 +241,9 @@ struct
 		String.get name 0 = '_' &&
 		String.get name 1 = '_'
 
+	let mk_fvar_access ctx field ct =
+		{ a_field = field; a_params = array_empty()  }
+
 	let rec c_expr ctx ?stype e = match e.eexpr with
 		| TConst c -> Const( c_const ctx c ) ++ (c_type ctx e.etype) @@ e.epos
 		| TLocal v -> (try
@@ -285,16 +288,24 @@ struct
 				cast_if_needed ctx base_t (c_expr ctx e)
 			in
 			Intrinsic( IArrayDecl(base_t) , List.map convert decl ) ++ ct @@ e.epos
-		(* | TArray (e1,e2) -> *)
-		(* 	let ex1 = c_expr ctx e1 in *)
-		(* 	let ex2 = c_expr ctx e2 in *)
-		(* 	let t = match ex1.t.ctype with *)
-		(* 		| Pointer ct | Array ct | Vector ct -> ct *)
-		(* 		| Inst(c,p) | V(Struct(c,p)) *)
-		(* 		| Null(Struct(c,p)) -> (try *)
-		(* 			let f = PMap.find "__array" c.cvars in *)
-
-
+		| TArray (e1,e2) ->
+			let ex1 = c_expr ctx e1 in
+			let ex2 = c_expr ctx e2 in
+			let expected = c_type ctx e.etype in
+			let t, acc = match ex1.t.ctype with
+				| R(Pointer ct) | R(Array ct) | R(Vector ct) ->
+					ct, ArrBuiltin
+				| R(Inst(c,p)) | V(Struct(c,p))
+				| Null(Struct(c,p)) -> (try
+					let f = PMap.find "__array" c.cvars in
+					let t = apply_cparams c p f.ftype in
+					let acc = mk_fvar_access ctx f t in
+					t, ArrClassField (acc)
+				with Not_found ->
+					mktr Dynamic, ArrNotFound)
+				| _ -> mktr Dynamic, ArrDynamic (c_type ctx e.etype)
+			in
+			cast_if_needed ctx expected (ArrayAcc (ex1,ex2,acc) ++ t @@ e.epos)
 		(* | TIf of texpr * texpr * texpr option *)
 		(* | TCast of texpr * module_type option *)
 		(* | TMeta of metadata_entry * texpr *)
