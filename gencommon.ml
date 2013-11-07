@@ -246,6 +246,10 @@ struct
 	let mk_fvar_access ctx field ct =
 		{ a_field = field; a_params = array_empty()  }
 
+	let rec clean_casts ctx expr = match expr.expr with
+		| Cast(e,_) -> clean_casts ctx e
+		| _ -> expr
+
 	let rec c_expr ctx ?stype e = match e.eexpr with
 		| TConst c -> Const( c_const ctx c ) ++ (c_type ctx e.etype) @@ e.epos
 		| TLocal v -> (try
@@ -330,8 +334,13 @@ struct
 			let ex1 = cast_if_needed ctx ct (c_expr ctx eif) in
 			let ex2 = cast_if_needed ctx ct (c_expr ctx eelse) in
 			IfVal(excond,ex1,ex2) ++ ct @@ e.epos
-		| _ -> assert false
+		| TBinop ( (Ast.OpAssign | Ast.OpAssignOp _ as op), e1, e2 ) ->
+			(* { e with eexpr = TBinop(op, run ~just_type:true e1, run e2) } *)
+			let ex1 = clean_casts ctx (c_expr ctx e1) in
+			let ex2 = cast_if_needed ctx ex1.t (c_expr ctx e2) in
+			Binop(op, ex1, ex2) ++ ex1.t @@ e.epos
 		(* | TBinop of Ast.binop * texpr * texpr *)
+		| _ -> assert false
 		(* | TField of texpr * tfield_access *)
 		(* | TCall of texpr * texpr list *)
 		(* | TNew of tclass * tparams * texpr list *)
