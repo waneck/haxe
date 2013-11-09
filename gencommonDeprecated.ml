@@ -1246,8 +1246,7 @@ let find_first_declared_field gen orig_cl ?exact_field field =
       let tlch = List.map (apply_params c.cl_types tlch) stl in
       loop_cl (depth+1) sup tl tlch
     | None -> ());
-    if c.cl_interface then
-      List.iter (fun (sup,stl) ->
+    if c.cl_interface then List.iter (fun (sup,stl) ->
         let tl = List.map (apply_params c.cl_types tl) stl in
         let stl = gen.greal_type_param (TClassDecl sup) stl in
         let tlch = List.map (apply_params c.cl_types tlch) stl in

@@ -155,6 +155,8 @@ and statement = {
 and field_access = {
 	a_field : field;
 		(* accessed field *)
+	a_overload : bool;
+		(* is the field overloaded? *)
 	(* a_expected : ct; *)
 		(* TODO: the expected type as defined by the original texpr *)
 	(* a_actual : ct; *)
@@ -255,6 +257,7 @@ and field = {
 	mutable ftype : ct;
 	mutable fstatic : bool;
 	mutable foverride : field option;
+	mutable foverload : bool;
 	mutable fkind : fkind;
 	mutable fflags : fflag Flags.t;
 	mutable fmodifiers : string list;
@@ -268,7 +271,7 @@ and fkind =
 		(* a property (getter/setter call) and also an underlying var *)
 	| KProp of bool * bool (* read, write *)
 		(* only a property *)
-	| KMethod of func
+	| KMethod of func option
 
 and visibility =
 	| VPublic
@@ -450,6 +453,35 @@ struct
 				{ ct with ctype = SpecializedNull(ret) }
 		| v -> ct
 
+	let rec array_for_all2 fn a1 a2 =
+		Array.length a1 = Array.length a2 &&
+			try
+				Array.iteri (fun i v -> if not (fn a2.(i) v) then raise Exit) a1;
+				true
+			with Exit ->
+				false
+
+	let rec same_overload_arg ct1 ct2 = match ct1.ctype, ct2.ctype with
+		| R(Inst(c1,p1)), R(Inst(c2,p2)) | V(Struct(c1,p1)), V(Struct(c2,p2)) ->
+			c1 == c2 && array_for_all2 same_overload_arg p1 p2
+		| R(Pointer p1), R(Pointer p2)
+		| R(Vector p1), R(Vector p2)
+		| R(Array p1), R(Array p2)
+		| R(Type p1), R(Type p2) -> same_overload_arg p1 p2
+		| t1, t2 -> t1 = t2
+
+	let rec same_overload_args f1 f2 = match f1.ftype.ctype, f2.ftype.ctype with
+		| R(Fun(_,r1,a1)), R(Fun(_,r2,a2)) -> (try
+			List.for_all2 same_overload_arg a1 a2
+		with Invalid_argument("List.for_all2") ->
+			false)
+		| _ -> false
+
+	let rec is_override f1 f2 =
+		if f1.foverload || f2.foverload then
+			same_overload_args f1 f2
+		else
+			true
 
 end;;
 
@@ -472,9 +504,13 @@ struct
 	let array_empty () =
 		Array.init 0 (fun _ -> assert false)
 
+	let empty_params : ct array = array_empty()
+
+	let empty_types : tparam array = array_empty()
+
 	let opt_or_empty = function
 		| Some v -> v
-		| None -> array_empty()
+		| None -> empty_types
 
 	let path_s path =
 		match path with | ([], s) -> s | (p, s) -> (String.concat "." (fst path)) ^ "." ^ (snd path)
@@ -560,7 +596,7 @@ let cls_id = ref 0
 let alloc_cls
 		~path
 		?types
-		?super
+		?(super=None)
 		?(fields=[])
 		?(implements=[]) () =
 
@@ -585,6 +621,7 @@ let alloc_cls
 		in
 		PMap.add f.fname (f :: lst) map
 	) PMap.empty ord_methods in
+
 	let ret = {
 		cid = id;
 		cpath = path;
@@ -661,6 +698,7 @@ let alloc_field
 		?(public=false)
 		?(vis=VPrivate)
 		?override
+		?(overload=false)
 		?(flags = Flags.empty)
 		?(modifiers = [])
 		?(declared = null_cls) () =
@@ -674,6 +712,7 @@ let alloc_field
 		ftype = ftype;
 		fstatic = static;
 		foverride = override;
+		foverload = overload;
 		fkind = kind;
 		fflags = flags;
 		fmodifiers = modifiers;
