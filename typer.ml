@@ -4214,6 +4214,7 @@ let rec create com =
 			| "Float" -> ctx.t.tfloat <- TAbstract (a,[]);
 			| "Int" -> ctx.t.tint <- TAbstract (a,[])
 			| "Bool" -> ctx.t.tbool <- TAbstract (a,[])
+			| "In" -> t_in := TAbstract(a,[])
 			| _ -> ());
 		| TEnumDecl e ->
 			()

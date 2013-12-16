@@ -1001,14 +1001,33 @@ let rec get_constructor build_type c =
 		let t, c = get_constructor build_type csup in
 		apply_params csup.cl_types cparams t, c
 
-let apply_in t ta =
+let t_in = ref t_dynamic
+
+let rec apply_in tex t ta =
 	let rec apply t = match t with
-		| TAbstract({a_path=["haxe"],"In"},_) -> ta
+		| TAbstract({a_path=[],"In"},_) -> ta
 		| t -> map apply t
 	in
 	apply t
 
-let rec unify a b =
+let rec to_of a_of tl =
+	let rec loop t = match t with
+		| TInst(c,[t1]) ->
+			let t2 = TInst(c,[!t_in]) in
+			TAbstract(a_of,[t2;t1])
+		| TEnum(en,[t1]) ->
+			let t2 = TEnum(en,[!t_in]) in
+			TAbstract(a_of,[t2;t1])
+		| TFun([t1],t2) ->
+			let t1 = TFun([t1],!t_in) in
+			TAbstract(a_of,[t1;t2])
+		| t ->
+			print_endline (s_type (print_context()) t);
+			assert false
+	in
+	loop tl
+
+and unify a b =
 	if a == b then
 		()
 	else match a, b with
@@ -1047,10 +1066,13 @@ let rec unify a b =
 	| TEnum (ea,tl1) , TEnum (eb,tl2) ->
 		if ea != eb then error [cannot_unify a b];
 		unify_types a b tl1 tl2
-	| _, TAbstract({a_path = ["haxe"],"Of"},[tm;ta]) ->
-		unify a (apply_in tm ta)
-	| TAbstract({a_path = ["haxe"],"Of"},[tm;ta]),_ ->
-		unify (apply_in tm ta) b
+	| TAbstract({a_path = [],"Of"},[tm1;ta1]),TAbstract({a_path = [],"Of"},[tm2;ta2]) ->
+		unify tm1 tm2;
+		unify ta1 ta2;
+	| _, TAbstract({a_path = [],"Of"} as a_of,[_;_]) ->
+		unify (to_of a_of a) b
+	| TAbstract({a_path = [],"Of"},[tm;ta]),_ ->
+		unify (apply_in b tm ta) b
 	| TAbstract (a1,tl1) , TAbstract (a2,tl2) when a1 == a2 ->
 		unify_types a b tl1 tl2
 	| TAbstract ({a_path=[],"Void"},_) , _
