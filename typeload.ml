@@ -359,8 +359,7 @@ let rec load_instance ctx t p allow_no_params =
 			| [] -> pt
 			| [TPType (CTPath {tpackage=[]; tname="StdTypes"; tsub=Some("In")})] -> pt
 			| [tp] ->
-				let t_in = { tpackage=[]; tname="StdTypes"; tsub=Some("In"); tparams=[]; } in
-				let t = { t with tparams = [TPType (CTPath t_in)]} in
+				let t = { t with tparams = []} in
 				let t_of = { tpackage=[]; tname="StdTypes"; tsub=Some("Of"); tparams = [TPType (CTPath t); tp]} in
 				load_instance ctx t_of p allow_no_params
 			| _ -> error "Only single type parameters are currently supported" p

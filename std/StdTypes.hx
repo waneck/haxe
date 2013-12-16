@@ -115,5 +115,5 @@ typedef Iterable<T> = {
 **/
 extern interface ArrayAccess<T> { }
 
-abstract In(Dynamic) from Dynamic to Dynamic {}
+abstract In(Dynamic) {}
 abstract Of<M,A>(Dynamic) {}

@@ -1003,7 +1003,7 @@ let rec get_constructor build_type c =
 
 let t_in = ref t_dynamic
 
-let rec apply_in tex t ta =
+let rec apply_in t ta =
 	let applied = ref false in
 	let rec apply t = match t with
 		| TAbstract({a_path=[],"In"},_) when not !applied ->
@@ -1082,7 +1082,7 @@ and unify a b =
 	| _, TAbstract({a_path = [],"Of"} as a_of,[_;_]) ->
 		unify (to_of a_of a) b
 	| TAbstract({a_path = [],"Of"},[tm;ta]),_ ->
-		unify (apply_in b tm ta) b
+		unify (apply_in tm ta) b
 	| TAbstract (a1,tl1) , TAbstract (a2,tl2) when a1 == a2 ->
 		unify_types a b tl1 tl2
 	| TAbstract ({a_path=[],"Void"},_) , _
