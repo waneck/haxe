@@ -1004,10 +1004,13 @@ let rec get_constructor build_type c =
 let t_in = ref t_dynamic
 
 let rec apply_in tex t ta =
+	let applied = ref false in
 	let rec apply t = match t with
-		| TAbstract({a_path=[],"In"},_) -> ta
-		| TAbstract({a_path=[],"Of"},_) -> t (* do not recurse into a different Of (is this necessary?) *)
-		| t -> map apply t
+		| TAbstract({a_path=[],"In"},_) when not !applied ->
+			applied := true;
+			ta
+		| t ->
+			if !applied then t else map apply t
 	in
 	apply t
 
