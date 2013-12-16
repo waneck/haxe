@@ -355,8 +355,16 @@ let rec load_instance ctx t p allow_no_params =
 	try
 		if t.tpackage <> [] || t.tsub <> None then raise Not_found;
 		let pt = List.assoc t.tname ctx.type_params in
-		if t.tparams <> [] then error ("Class type parameter " ^ t.tname ^ " can't have parameters") p;
-		pt
+		begin match t.tparams with
+			| [] -> pt
+			| [TPType (CTPath {tpackage=[]; tname="StdTypes"; tsub=Some("In")})] -> pt
+			| [tp] ->
+				let t_in = { tpackage=[]; tname="StdTypes"; tsub=Some("In"); tparams=[]; } in
+				let t = { t with tparams = [TPType (CTPath t_in)]} in
+				let t_of = { tpackage=[]; tname="StdTypes"; tsub=Some("Of"); tparams = [TPType (CTPath t); tp]} in
+				load_instance ctx t_of p allow_no_params
+			| _ -> error "Only single type parameters are currently supported" p
+		end
 	with Not_found ->
 		let mt = load_type_def ctx p t in
 		let is_generic = match mt with TClassDecl {cl_kind = KGeneric} -> true | _ -> false in
