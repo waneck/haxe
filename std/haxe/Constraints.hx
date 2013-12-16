@@ -38,3 +38,6 @@ abstract Function(Dynamic) { }
 	type, the underlying type will be `Dynamic`.
 **/
 abstract FlatEnum(Dynamic) { }
+
+abstract Of<M,A>(Dynamic) {}
+abstract In(Dynamic) {}

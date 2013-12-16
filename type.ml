@@ -1001,6 +1001,13 @@ let rec get_constructor build_type c =
 		let t, c = get_constructor build_type csup in
 		apply_params csup.cl_types cparams t, c
 
+let apply_in t ta =
+	let rec apply t = match t with
+		| TAbstract({a_path=["haxe"],"In"},_) -> ta
+		| t -> map apply t
+	in
+	apply t
+
 let rec unify a b =
 	if a == b then
 		()
@@ -1040,6 +1047,10 @@ let rec unify a b =
 	| TEnum (ea,tl1) , TEnum (eb,tl2) ->
 		if ea != eb then error [cannot_unify a b];
 		unify_types a b tl1 tl2
+	| _, TAbstract({a_path = ["haxe"],"Of"},[tm;ta]) ->
+		unify a (apply_in tm ta)
+	| TAbstract({a_path = ["haxe"],"Of"},[tm;ta]),_ ->
+		unify (apply_in tm ta) b
 	| TAbstract (a1,tl1) , TAbstract (a2,tl2) when a1 == a2 ->
 		unify_types a b tl1 tl2
 	| TAbstract ({a_path=[],"Void"},_) , _
