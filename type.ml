@@ -1006,18 +1006,25 @@ let t_in = ref t_dynamic
 let rec apply_in tex t ta =
 	let rec apply t = match t with
 		| TAbstract({a_path=[],"In"},_) -> ta
+		| TAbstract({a_path=[],"Of"},_) -> t (* do not recurse into a different Of (is this necessary?) *)
 		| t -> map apply t
 	in
 	apply t
 
+let apply_right tl = match List.rev tl with
+	| t :: tl -> t,List.rev (!t_in :: tl)
+	| [] -> assert false
+
 let rec to_of a_of tl =
 	let rec loop t = match t with
-		| TInst(c,[t1]) ->
-			let t2 = TInst(c,[!t_in]) in
-			TAbstract(a_of,[t2;t1])
-		| TEnum(en,[t1]) ->
-			let t2 = TEnum(en,[!t_in]) in
-			TAbstract(a_of,[t2;t1])
+		| TInst(c,tl) ->
+			let t,tl = apply_right tl in
+			let t2 = TInst(c,tl) in
+			TAbstract(a_of,[t2;t])
+		| TEnum(en,tl) ->
+			let t,tl = apply_right tl in
+			let t2 = TEnum(en,tl) in
+			TAbstract(a_of,[t2;t])
 		| TFun([t1],t2) ->
 			let t1 = TFun([t1],!t_in) in
 			TAbstract(a_of,[t1;t2])
