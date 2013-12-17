@@ -3384,8 +3384,8 @@ and build_call ctx acc el (with_type:with_type) p =
 				| _ ->
 					let el, tfunc = unify_call_params ctx fopts el args r p false in
 					el,(match tfunc with TFun(_,r) -> r | _ -> assert false), {e with etype = tfunc})
-		| TAbstract({a_path=[],"Of"},[TFun(args,_);tr]) ->
-			loop (TFun(args,tr))
+		| TAbstract({a_path=[],"Of"},[tm;tr]) ->
+			loop (apply_in tm tr)
 		| TMono _ ->
 			let t = mk_mono() in
 			let el = List.map (fun e -> type_expr ctx e Value) el in
