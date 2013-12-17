@@ -1016,15 +1016,15 @@ let rec apply_in t ta =
 
 
 
-let apply_right tl = 
+let apply_right tl =
 	let rec loop tl = match tl with
-	| t :: tl -> 
-		if t == !t_in then
-			let x,xl = loop tl in
-			x,t::xl
-		else 
-			t,!t_in :: tl
-	| [] -> assert false
+		| t :: tl ->
+			if t == !t_in then
+				let x,xl = loop tl in
+				x,t::xl
+			else
+				t,!t_in :: tl
+		| [] -> assert false
 	in
 	let t, tl = loop (List.rev tl) in
 	t, List.rev tl
