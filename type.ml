@@ -1023,7 +1023,8 @@ let rec unify_of tm ta b =
 					x,t::xl
 				else
 					t,!t_in :: tl
-			| [] -> assert false
+			| [] ->
+				error [Unify_custom "Invalid Of-unification"]
 		in
 		let t, tl = loop (List.rev tl) in
 		t, List.rev tl
@@ -1035,13 +1036,25 @@ let rec unify_of tm ta b =
 		| TEnum(en,tl) ->
 			let t,tl = apply_right tl in
 			TEnum(en,tl),t
+		| TType(tt,tl) ->
+			let t,tl = apply_right tl in
+			TType(tt,tl),t
+		| TAbstract(a,tl) ->
+			let t,tl = apply_right tl in
+			TAbstract(a,tl),t
 		| TFun([(a,b,t1) as p1],t2) ->
 			if t2 == !t_in then TFun([(a,b,!t_in)],t2),t1 else TFun([p1],!t_in),t2
 		| TDynamic _ ->
 			t_dynamic,t_dynamic
-		| t ->
-			print_endline (s_type (print_context()) t);
-			assert false
+		| TMono r ->
+			begin match !r with
+				| Some t -> loop t
+				| None -> assert false (* ??? *)
+			end
+		| TLazy f ->
+			loop (!f())
+		| TAnon _ | TFun _ ->
+			error [Unify_custom "Invalid Of-unification"]
 	in
 	let tl,tr = loop b in
 	unify tm tl;
