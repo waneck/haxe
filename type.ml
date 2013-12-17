@@ -1014,39 +1014,38 @@ let rec apply_in t ta =
 	in
 	apply t
 
-
-
-let apply_right tl =
-	let rec loop tl = match tl with
-		| t :: tl ->
-			if t == !t_in then
-				let x,xl = loop tl in
-				x,t::xl
-			else
-				t,!t_in :: tl
-		| [] -> assert false
+let rec unify_of tm ta b =
+	let rec apply_right tl =
+		let rec loop tl = match tl with
+			| t :: tl ->
+				if t == !t_in then
+					let x,xl = loop tl in
+					x,t::xl
+				else
+					t,!t_in :: tl
+			| [] -> assert false
+		in
+		let t, tl = loop (List.rev tl) in
+		t, List.rev tl
 	in
-	let t, tl = loop (List.rev tl) in
-	t, List.rev tl
-
-let rec to_of a_of tl =
 	let rec loop t = match t with
 		| TInst(c,tl) ->
 			let t,tl = apply_right tl in
-			let t2 = TInst(c,tl) in
-			TAbstract(a_of,[t2;t])
+			TInst(c,tl),t
 		| TEnum(en,tl) ->
 			let t,tl = apply_right tl in
-			let t2 = TEnum(en,tl) in
-			TAbstract(a_of,[t2;t])
+			TEnum(en,tl),t
 		| TFun([(a,b,t1) as p1],t2) ->
-			let t1,t2 = if t2 == !t_in then TFun([(a,b,!t_in)],t2),t1 else TFun([p1],!t_in),t2 in
-			TAbstract(a_of,[t1;t2])
+			if t2 == !t_in then TFun([(a,b,!t_in)],t2),t1 else TFun([p1],!t_in),t2
+		| TDynamic _ ->
+			t_dynamic,t_dynamic
 		| t ->
 			print_endline (s_type (print_context()) t);
 			assert false
 	in
-	loop tl
+	let tl,tr = loop b in
+	unify tm tl;
+	unify ta tr
 
 and unify a b =
 	if a == b then
@@ -1090,10 +1089,10 @@ and unify a b =
 	| TAbstract({a_path = [],"Of"},[tm1;ta1]),TAbstract({a_path = [],"Of"},[tm2;ta2]) ->
 		unify tm1 tm2;
 		unify ta1 ta2;
-	| _, TAbstract({a_path = [],"Of"} as a_of,[_;_]) ->
-		unify (to_of a_of a) b
-	| TAbstract({a_path = [],"Of"},[tm;ta]),_ ->
-		unify (apply_in tm ta) b
+	| TAbstract({a_path = [],"Of"},[tm;ta]),b ->
+		unify_of tm ta b
+	| a,TAbstract({a_path = [],"Of"},[tm;ta]) ->
+		unify_of tm ta a
 	| TAbstract (a1,tl1) , TAbstract (a2,tl2) when a1 == a2 ->
 		unify_types a b tl1 tl2
 	| TAbstract ({a_path=[],"Void"},_) , _
