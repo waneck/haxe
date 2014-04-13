@@ -2278,7 +2278,7 @@ let configure gen =
   let explicit_fn_name c tl fname =
     path_param_s (TClassDecl c) c.cl_path tl ^ "." ^ fname
   in
-  FixOverrides.configure ~explicit_fn_name:explicit_fn_name gen;
+	if not erase_generics then FixOverrides.configure ~explicit_fn_name:explicit_fn_name gen;
   Normalize.configure gen ~metas:(Hashtbl.create 0);
 
   AbstractImplementationFix.configure gen;
@@ -2366,7 +2366,10 @@ let configure gen =
     mk_cast ecall.etype { ecall with eexpr = TCall(infer, call_args) }
   in
 
-	if not erase_generics then handle_type_params gen ifaces (get_cl (get_type gen (["haxe";"lang"], "IGenericObject")));
+	(if not erase_generics then
+		handle_type_params gen ifaces (get_cl (get_type gen (["haxe";"lang"], "IGenericObject")))
+	else
+		TypeParams.RealTypeParams.RealTypeParamsModf.configure gen (TypeParams.RealTypeParams.RealTypeParamsModf.set_only_hxgeneric gen));
 
   let rcf_ctx = ReflectionCFs.new_ctx gen closure_t object_iface true rcf_on_getset_field rcf_on_call_field (fun hash hash_array ->
     { hash with eexpr = TCall(rcf_static_find, [hash; hash_array]); etype=basic.tint }

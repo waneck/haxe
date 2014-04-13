@@ -279,7 +279,7 @@ class Test #if swf_mark implements mt.Protect #end {
 			#if php
 			new TestPhp(),
 			#end
-			#if (java || cs)
+			#if (!erase_generics && (java || cs))
 			new TestOverloads(),
 			#end
 			#if ((dce == "full") && !interp && !as3)

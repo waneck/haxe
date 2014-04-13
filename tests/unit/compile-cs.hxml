@@ -6,4 +6,5 @@
 compile-each.hxml
 -main unit.Test
 -cs cs
+-D erase_generics
 -net-lib native_cs/bin/native_cs.dll

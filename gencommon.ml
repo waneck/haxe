@@ -4507,6 +4507,14 @@ struct
         in
         run
 
+			let set_only_hxgeneric gen =
+        let rec run md =
+          match md with
+            | TTypeDecl _ | TAbstractDecl _ -> md
+            | _ -> ignore (set_hxgeneric gen md); md
+				in
+				run
+
       let configure gen mapping_func =
         let map e = Some(mapping_func e) in
         gen.gmodule_filters#add ~name:name ~priority:(PCustom priority) map
