@@ -200,6 +200,19 @@ import cs.internal.Runtime;
 		return createInstance(cl, []);
 	}
 
+#if erase_generics
+	@:functionCode('
+		if (@params == null || @params[0] == null)
+		{
+			object ret = haxe.lang.Runtime.slowGetField(e, constr, true);
+			if (ret is haxe.lang.Function)
+				throw haxe.lang.HaxeException.wrap("Constructor " + constr + " needs parameters");
+			return ret;
+		} else {
+			return haxe.lang.Runtime.slowCallField(e, constr, @params);
+		}
+	')
+#else
 	@:functionCode('
 		if (@params == null || @params[0] == null)
 		{
@@ -211,6 +224,7 @@ import cs.internal.Runtime;
 			return (T) haxe.lang.Runtime.slowCallField(e, constr, @params);
 		}
 	')
+#end
 	public static function createEnum<T>( e : Enum<T>, constr : String, ?params : Array<Dynamic> ) : T
 	{
 		return null;
@@ -221,6 +235,28 @@ import cs.internal.Runtime;
 		return createEnum(e, constr[index], params);
 	}
 
+#if erase_generics
+	@:functionCode('
+		if (c == typeof(string))
+		{
+			return haxe.lang.StringRefl.fields;
+		}
+
+		Array ret = new Array();
+
+		System.Reflection.MemberInfo[] mis = c.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.FlattenHierarchy);
+		for (int i = 0; i < mis.Length; i++)
+		{
+			if (mis[i] is System.Reflection.PropertyInfo)
+				continue;
+			string n = mis[i].Name;
+			if (!n.StartsWith("__hx_") && n[0] != \'.\' && !n.Equals("Equals") && !n.Equals("ToString") && !n.Equals("GetHashCode") && !n.Equals("GetType"))
+			ret.push(mis[i].Name);
+		}
+
+		return ret;
+	')
+#else
 	@:functionCode('
 		if (c == typeof(string))
 		{
@@ -229,22 +265,44 @@ import cs.internal.Runtime;
 
 		Array<object> ret = new Array<object>();
 
-        System.Reflection.MemberInfo[] mis = c.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.FlattenHierarchy);
-        for (int i = 0; i < mis.Length; i++)
-        {
+		System.Reflection.MemberInfo[] mis = c.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.FlattenHierarchy);
+		for (int i = 0; i < mis.Length; i++)
+		{
 			if (mis[i] is System.Reflection.PropertyInfo)
-                continue;
+				continue;
 			string n = mis[i].Name;
 			if (!n.StartsWith("__hx_") && n[0] != \'.\' && !n.Equals("Equals") && !n.Equals("ToString") && !n.Equals("GetHashCode") && !n.Equals("GetType"))
-				ret.push(mis[i].Name);
-        }
+			ret.push(mis[i].Name);
+		}
 
 		return ret;
 	')
+#end
 	public static function getInstanceFields( c : Class<Dynamic> ) : Array<String> {
 		return null;
 	}
 
+#if erase_generics
+	@:functionCode('
+		Array ret = new Array();
+
+		if (c == typeof(string))
+		{
+			ret.push("fromCharCode");
+			return ret;
+		}
+
+		System.Reflection.MemberInfo[] mis = c.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+		for (int i = 0; i < mis.Length; i++)
+		{
+			string n = mis[i].Name;
+			if (!n.StartsWith("__hx_"))
+				ret.push(mis[i].Name);
+		}
+
+		return ret;
+	')
+#else
 	@:functionCode('
 		Array<object> ret = new Array<object>();
 
@@ -254,16 +312,17 @@ import cs.internal.Runtime;
 			return ret;
 		}
 
-        System.Reflection.MemberInfo[] mis = c.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-        for (int i = 0; i < mis.Length; i++)
-        {
-            string n = mis[i].Name;
+		System.Reflection.MemberInfo[] mis = c.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+		for (int i = 0; i < mis.Length; i++)
+		{
+			string n = mis[i].Name;
 			if (!n.StartsWith("__hx_"))
 				ret.push(mis[i].Name);
-        }
+		}
 
-        return ret;
+		return ret;
 	')
+#end
 	public static function getClassFields( c : Class<Dynamic> ) : Array<String> {
 		return null;
 	}
@@ -351,9 +410,15 @@ import cs.internal.Runtime;
 		return e.tag;
 	}
 
+#if erase_generics
+	@:functionCode('
+		return ( e is System.Enum ) ? new Array() : ((haxe.lang.Enum) e).@params;
+	')
+#else
 	@:functionCode('
 		return ( e is System.Enum ) ? new Array<object>() : ((haxe.lang.Enum) e).@params;
 	')
+#end
 	public static function enumParameters( e : EnumValue ) : Array<Dynamic> untyped
 	{
 		return null;

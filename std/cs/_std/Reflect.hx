@@ -94,6 +94,16 @@ import cs.internal.Function;
 		return null;
 	}
 
+#if erase_generics
+	@:functionCode('
+		if (o is haxe.lang.IHxObject)
+			((haxe.lang.IHxObject) o).__hx_setField(field, haxe.lang.FieldLookup.hash(field), value, true);
+		else if (haxe.lang.Runtime.slowHasField(o, "set_" + field))
+			haxe.lang.Runtime.slowCallField(o, "set_" + field, new Array(new object[]{value}));
+		else
+			haxe.lang.Runtime.slowSetField(o, field, value);
+	')
+#else
 	@:functionCode('
 		if (o is haxe.lang.IHxObject)
 			((haxe.lang.IHxObject) o).__hx_setField(field, haxe.lang.FieldLookup.hash(field), value, true);
@@ -102,6 +112,7 @@ import cs.internal.Function;
 		else
 			haxe.lang.Runtime.slowSetField(o, field, value);
 	')
+#end
 	public static function setProperty( o : Dynamic, field : String, value : Dynamic ) : Void
 	{
 
@@ -115,6 +126,20 @@ import cs.internal.Function;
 		return null;
 	}
 
+#if erase_generics
+	@:functionCode('
+		if (o is haxe.lang.IHxObject)
+		{
+			Array ret = new Array();
+				((haxe.lang.IHxObject) o).__hx_getFields(ret);
+			return ret;
+		} else if (o is System.Type) {
+			return Type.getClassFields( (System.Type) o);
+		} else {
+			return new Array();
+		}
+	')
+#else
 	@:functionCode('
 		if (o is haxe.lang.IHxObject)
 		{
@@ -127,6 +152,7 @@ import cs.internal.Function;
 			return new Array<object>();
 		}
 	')
+#end
 	public static function fields( o : Dynamic ) : Array<String>
 	{
 		return null;

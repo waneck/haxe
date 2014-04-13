@@ -610,8 +610,7 @@ let handle_type_params gen ifaces base_generic =
 
     Hashtbl.add gen.gtparam_cast (["cs"], "NativeArray") gtparam_cast_native_array;
     (* end set gtparam_cast *)
-
-  TypeParams.RealTypeParams.default_config gen (fun e t -> gen.gcon.warning ("Cannot cast to " ^ (debug_type t)) e.epos; mk_cast t e) ifaces base_generic
+		TypeParams.RealTypeParams.default_config gen (fun e t -> gen.gcon.warning ("Cannot cast to " ^ (debug_type t)) e.epos; mk_cast t e) ifaces base_generic
 
 let connecting_string = "?" (* ? see list here http://www.fileformat.info/info/unicode/category/index.htm and here for C# http://msdn.microsoft.com/en-us/library/aa664670.aspx *)
 let default_package = "cs" (* I'm having this separated as I'm still not happy with having a cs package. Maybe dotnet would be better? *)
@@ -660,14 +659,11 @@ let rec get_fun_modifiers meta access modifiers =
 let configure gen =
   let basic = gen.gcon.basic in
 
+	let erase_generics = Common.defined gen.gcon Define.EraseGenerics in
   let fn_cl = get_cl (get_type gen (["haxe";"lang"],"Function")) in
-
-  let null_t = (get_cl (get_type gen (["haxe";"lang"],"Null")) ) in
-
+  let null_t = if erase_generics then null_class else (get_cl (get_type gen (["haxe";"lang"],"Null")) ) in
   let runtime_cl = get_cl (get_type gen (["haxe";"lang"],"Runtime")) in
-
   let no_root = Common.defined gen.gcon Define.NoRoot in
-
   let change_id name = try
 			Hashtbl.find reserved name
 		with | Not_found ->
@@ -676,7 +672,6 @@ let configure gen =
 	in
 
   let change_clname n = change_id n in
-
   let change_ns md = if no_root then
     function
       | [] when is_hxgen md -> ["haxe";"root"]
@@ -783,10 +778,13 @@ let configure gen =
           It works on cases such as Hash<T> returning Null<T> since cast_detect will invoke real_type at the original type,
           Null<T>, which will then return the type haxe.lang.Null<>
         *)
-        (match real_type t with
-          | TInst( { cl_kind = KTypeParameter _ }, _ ) -> TInst(null_t, [t])
-          | _ when is_cs_basic_type t -> TInst(null_t, [t])
-          | _ -> real_type t)
+				if erase_generics then
+					t_dynamic
+				else
+					(match real_type t with
+						| TInst( { cl_kind = KTypeParameter _ }, _ ) -> TInst(null_t, [t])
+						| _ when is_cs_basic_type t -> TInst(null_t, [t])
+						| _ -> real_type t)
       | TAbstract _
       | TType _ -> t
       | TAnon (anon) when (match !(anon.a_status) with | Statics _ | EnumStatics _ | AbstractStatics _ -> true | _ -> false) -> t
@@ -823,7 +821,7 @@ let configure gen =
       | true, x ->
         dynamic_anon
     in
-    if is_hxgeneric && List.exists (fun t -> match follow t with | TDynamic _ -> true | _ -> false) tl then
+    if is_hxgeneric && (erase_generics || List.exists (fun t -> match follow t with | TDynamic _ -> true | _ -> false) tl) then
       List.map (fun _ -> t_dynamic) tl
     else
       List.map ret tl
@@ -842,6 +840,8 @@ let configure gen =
 
   let rec t_s t =
     match real_type t with
+			| TInst({ cl_kind = KTypeParameter _ }, _) when erase_generics ->
+				"object"
       (* basic types *)
       | TEnum ({ e_path = ([], "Bool") }, [])
       | TAbstract ({ a_path = ([], "Bool") },[]) -> "bool"
@@ -914,6 +914,7 @@ let configure gen =
   and path_param_s md path params =
       match params with
         | [] -> "global::" ^ module_s md
+				| _ when erase_generics -> "global::" ^ module_s md
         | _ -> sprintf "%s<%s>" ("global::" ^ module_s md) (String.concat ", " (List.map (fun t -> t_s t) (change_param_type md params)))
   in
 
@@ -1449,8 +1450,7 @@ let configure gen =
       expr_s w e;
 
       (match params with
-        | [] -> ()
-        | params ->
+        | _ :: _ when not erase_generics ->
           let md = match e.eexpr with
             | TField(ef, _) -> t_to_md (run_follow gen ef.etype)
             | _ -> assert false
@@ -1462,6 +1462,7 @@ let configure gen =
             acc + 1
           ) 0 (change_param_type md params));
           write w ">"
+				| _ -> ()
       );
 
       let rec loop acc elist tlist =
@@ -1594,9 +1595,7 @@ let configure gen =
 
   let get_string_params cl_types =
     match cl_types with
-      | [] ->
-        ("","")
-      | _ ->
+      | _ :: _ when not erase_generics ->
         let params = sprintf "<%s>" (String.concat ", " (List.map (fun (_, tcl) -> match follow tcl with | TInst(cl, _) -> snd cl.cl_path | _ -> assert false) cl_types)) in
         let params_extends = List.fold_left (fun acc (name, t) ->
           match run_follow gen t with
@@ -1608,6 +1607,8 @@ let configure gen =
             | _ -> trace (t_s t); assert false (* FIXME it seems that a cl_types will never be anything other than cl.cl_types. I'll take the risk and fail if not, just to see if that confirms *)
         ) [] cl_types in
         (params, String.concat " " params_extends)
+      | _ ->
+        ("","")
   in
 
 	let rec gen_prop w is_static cl is_final (prop,t,get,set) =
@@ -2221,7 +2222,7 @@ let configure gen =
 
   let tp_v = alloc_var "$type_param" t_dynamic in
   let mk_tp t pos = { eexpr = TLocal(tp_v); etype = t; epos = pos } in
-  TypeParams.configure gen (fun ecall efield params elist ->
+	if not erase_generics then TypeParams.configure gen (fun ecall efield params elist ->
     match efield.eexpr with
     | TField(_, FEnum _) ->
         { ecall with eexpr = TCall(efield, elist) }
@@ -2229,7 +2230,7 @@ let configure gen =
         { ecall with eexpr = TCall(efield, (List.map (fun t -> mk_tp t ecall.epos ) params) @ elist) }
   );
 
-  HardNullableSynf.configure gen (HardNullableSynf.traverse gen
+	if not erase_generics then HardNullableSynf.configure gen (HardNullableSynf.traverse gen
     (fun e ->
       match real_type e.etype with
         | TInst({ cl_path = (["haxe";"lang"], "Null") }, [t]) ->
@@ -2365,7 +2366,7 @@ let configure gen =
     mk_cast ecall.etype { ecall with eexpr = TCall(infer, call_args) }
   in
 
-  handle_type_params gen ifaces (get_cl (get_type gen (["haxe";"lang"], "IGenericObject")));
+	if not erase_generics then handle_type_params gen ifaces (get_cl (get_type gen (["haxe";"lang"], "IGenericObject")));
 
   let rcf_ctx = ReflectionCFs.new_ctx gen closure_t object_iface true rcf_on_getset_field rcf_on_call_field (fun hash hash_array ->
     { hash with eexpr = TCall(rcf_static_find, [hash; hash_array]); etype=basic.tint }
@@ -2601,7 +2602,7 @@ let configure gen =
     get_typeof e
   ));
 
-  CastDetect.configure gen (CastDetect.default_implementation gen (Some (TEnum(empty_e, []))) true ~native_string_cast:false ~overloads_cast_to_base:true);
+  CastDetect.configure gen (CastDetect.default_implementation gen (Some (TEnum(empty_e, []))) (not erase_generics) ~native_string_cast:false ~overloads_cast_to_base:true);
 
   (*FollowAll.configure gen;*)
 
@@ -2715,7 +2716,7 @@ let configure gen =
     gen.gcon.error "Fields 'fieldIds' and 'fields' were not found in class haxe.lang.FieldLookup" flookup_cl.cl_pos
   );
 
-  TypeParams.RenameTypeParameters.run gen;
+	if not erase_generics then TypeParams.RenameTypeParameters.run gen;
 
   let t = Common.timer "code generation" in
 

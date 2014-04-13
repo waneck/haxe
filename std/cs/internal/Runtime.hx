@@ -22,7 +22,6 @@
 package cs.internal;
 import cs.Lib;
 import cs.NativeArray;
-import cs.NativeArray;
 import cs.system.Activator;
 import cs.system.IConvertible;
 import cs.system.reflection.MethodBase;
@@ -411,6 +410,40 @@ import cs.system.Type;
 		return false;
 	}
 
+#if erase_generics
+	@:functionCode('
+		if (obj == null)
+			throw new System.NullReferenceException("Cannot access field \'" + field + "\' of null.");
+
+		System.Type t = obj as System.Type;
+		System.Reflection.BindingFlags bf;
+        if (t == null)
+		{
+			t = obj.GetType();
+			bf = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.FlattenHierarchy;
+		} else {
+			obj = null;
+			bf = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public;
+		}
+
+		System.Reflection.FieldInfo f = t.GetField(field, bf);
+		if (f != null)
+		{
+			f.SetValue(obj, @value);
+			return @value;
+		} else {
+			System.Reflection.PropertyInfo prop = t.GetProperty(field, bf);
+			if (prop == null)
+			{
+				throw haxe.lang.HaxeException.wrap("Field \'" + field + "\' not found for writing from Class " + t);
+			}
+			prop.SetValue(obj, @value, null);
+
+			return @value;
+		}
+
+	')
+#else
 	@:functionCode('
 		if (obj == null)
 			throw new System.NullReferenceException("Cannot access field \'" + field + "\' of null.");
@@ -453,6 +486,7 @@ import cs.system.Type;
 		}
 
 	')
+#end
 	public static function slowSetField(obj:Dynamic, field:String, value:Dynamic):Dynamic
 	{
 		//not implemented yet;
@@ -546,7 +580,9 @@ import cs.system.Type;
 			var strParam = param + "";
 			if (StringTools.startsWith(strParam, "haxe.lang.Null"))
 			{
+#if !erase_generics
 				oargs[i] = mkNullable(oargs[i], param);
+#end
 			} else if (cast(untyped __typeof__(IConvertible), Type).IsAssignableFrom(param)) {
 				if (oargs[i] == null) {
 					if (param.IsValueType)
@@ -557,6 +593,7 @@ import cs.system.Type;
 			}
 		}
 
+#if !erase_generics
 		if (methods[0].ContainsGenericParameters && Std.is(methods[0], cs.system.reflection.MethodInfo))
 		{
 			var m:MethodInfo = cast methods[0];
@@ -569,6 +606,7 @@ import cs.system.Type;
 			var retg = m.Invoke(obj, oargs);
 			return cs.internal.Runtime.unbox(retg);
 		}
+#end
 
 		var m = methods[0];
 		if (obj == null && Std.is(m, cs.system.reflection.ConstructorInfo))
@@ -583,14 +621,19 @@ import cs.system.Type;
 
 	public static function unbox(dyn:Dynamic):Dynamic
 	{
+#if !erase_generics
 		if (dyn != null && untyped (Lib.nativeType(dyn) + "").StartsWith("haxe.lang.Null"))
 		{
 			return dyn.toDynamic();
 		} else {
 			return dyn;
 		}
+#else
+		return dyn;
+#end
 	}
 
+#if !erase_generics
 	@:functionCode('
 		if (nullableType.ContainsGenericParameters)
 			return haxe.lang.Null<object>.ofDynamic<object>(obj);
@@ -600,7 +643,52 @@ import cs.system.Type;
 	{
 		return null;
 	}
+#end
 
+#if erase_generics
+	@:functionCode('
+		if (field == "toString")
+		{
+			if (args == null)
+				return obj.ToString();
+			field = "ToString";
+		}
+		if (args == null) args = new Array();
+
+		System.Reflection.BindingFlags bf;
+		System.Type t = obj as System.Type;
+		if (t == null)
+		{
+			string s = obj as string;
+			if (s != null)
+				return haxe.lang.StringRefl.handleCallField(s, field, args);
+			t = obj.GetType();
+			bf = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.FlattenHierarchy;
+		} else {
+			if (t == typeof(string) && field.Equals("fromCharCode"))
+				return haxe.lang.StringExt.fromCharCode(toInt(args[0]));
+			obj = null;
+			bf = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public;
+		}
+
+		System.Reflection.MethodInfo[] mis = t.GetMethods(bf);
+		int last = 0;
+		for (int i = 0; i < mis.Length; i++)
+		{
+			if (mis[i].Name.Equals(field))
+			{
+				mis[last++] = mis[i];
+			}
+		}
+
+		if (last == 0)
+		{
+			throw haxe.lang.HaxeException.wrap("Method \'" + field + "\' not found on type " + t);
+		}
+
+		return haxe.lang.Runtime.callMethod(obj, mis, last, args);
+	')
+#else
 	@:functionCode('
 		if (field == "toString")
 		{
@@ -643,6 +731,7 @@ import cs.system.Type;
 
 		return haxe.lang.Runtime.callMethod(obj, mis, last, args);
 	')
+#end
 	public static function slowCallField(obj:Dynamic, field:String, args:Array<Dynamic>):Dynamic
 	{
 		throw "not implemented";
@@ -743,6 +832,7 @@ import cs.system.Type;
 	}
 
 
+#if !erase_generics
 	@:functionCode('
 		if (obj is To)
 			return (To) obj;
@@ -759,9 +849,14 @@ import cs.system.Type;
 		else
 			return (To) obj;
 	')
+#else
+	@:functionCode('
+		return obj;
+	')
+#end
 	public static function genericCast<To>(obj:Dynamic):To
 	{
-		return null;
+		return cast obj;
 	}
 
 	@:functionCode('

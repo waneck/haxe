@@ -21,6 +21,15 @@
  */
 import cs.NativeArray;
 
+#if erase_generics
+@:classCode('
+	public Array(object[] native)
+	{
+		this.__a = native;
+		this.length = native.Length;
+	}
+')
+#else
 @:classCode('
 	public Array(T[] native)
 	{
@@ -28,23 +37,36 @@ import cs.NativeArray;
 		this.length = native.Length;
 	}
 ')
+#end
 @:final @:coreApi class Array<T> implements ArrayAccess<T> {
 
 	public var length(default,null) : Int;
 
 	private var __a:NativeArray<T>;
 
+#if erase_generics
+	@:functionCode('
+			return new Array(native);
+	')
+#else
 	@:functionCode('
 			return new Array<X>(native);
 	')
+#end
 	private static function ofNative<X>(native:NativeArray<X>):Array<X>
 	{
 		return null;
 	}
 
+#if erase_generics
+	@:functionCode('
+			return new Array(new object[size]);
+	')
+#else
 	@:functionCode('
 			return new Array<Y>(new Y[size]);
 	')
+#end
 	private static function alloc<Y>(size:Int):Array<Y>
 	{
 		return null;
