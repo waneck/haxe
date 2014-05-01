@@ -133,6 +133,7 @@ module Meta = struct
 		| Struct
 		| StructAccess
 		| SuppressWarnings
+		| TargetExtension
 		| This
 		| Throws
 		| To

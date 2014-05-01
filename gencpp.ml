@@ -165,7 +165,7 @@ let new_source_file common_ctx base_dir sub_dir extension class_path =
    cached_source_writer common_ctx (full_dir ^ "/" ^ ((snd class_path) ^ extension));;
 
 
-let new_cpp_file common_ctx base_dir = new_source_file common_ctx base_dir "src" ".cpp";;
+let new_cpp_file common_ctx base_dir = new_source_file common_ctx base_dir "src";;
 
 let new_header_file common_ctx base_dir =
    new_source_file common_ctx base_dir "include" ".h";;
@@ -2452,7 +2452,7 @@ let gen_member_def ctx class_def is_static is_interface field =
    ;;
 
 let path_of_string path =
-   ["@verbatim"], path 
+   ["@verbatim"], path
 ;;
 
 
@@ -2606,7 +2606,7 @@ let generate_main common_ctx member_types super_deps class_def file_info =
    let depend_referenced = find_referenced_types common_ctx (TClassDecl class_def) super_deps (Hashtbl.create 0) false true false in
    let generate_startup filename is_main =
       (*make_class_directories base_dir ( "src" :: []);*)
-      let cpp_file = new_cpp_file common_ctx common_ctx.file ([],filename) in
+      let cpp_file = new_cpp_file common_ctx common_ctx.file ".cpp" ([],filename) in
       let output_main = (cpp_file#write) in
 
       output_main "#include <hxcpp.h>\n\n";
@@ -2627,7 +2627,7 @@ let generate_main common_ctx member_types super_deps class_def file_info =
 
 let generate_dummy_main common_ctx =
    let generate_startup filename is_main =
-      let main_file = new_cpp_file common_ctx common_ctx.file ([],filename) in
+      let main_file = new_cpp_file common_ctx common_ctx.file ".cpp" ([],filename) in
       let output_main = (main_file#write) in
       output_main "#include <hxcpp.h>\n\n";
       output_main "#include <stdio.h>\n\n";
@@ -2642,7 +2642,7 @@ let generate_dummy_main common_ctx =
 let generate_boot common_ctx boot_classes init_classes =
    (* Write boot class too ... *)
    let base_dir = common_ctx.file in
-   let boot_file = new_cpp_file common_ctx base_dir ([],"__boot__") in
+   let boot_file = new_cpp_file common_ctx base_dir ".cpp" ([],"__boot__") in
    let output_boot = (boot_file#write) in
    output_boot "#include <hxcpp.h>\n\n";
    List.iter ( fun class_path -> boot_file#add_include class_path ) boot_classes;
@@ -2668,7 +2668,7 @@ let generate_boot common_ctx boot_classes init_classes =
 let generate_files common_ctx file_info =
    (* Write __files__ class too ... *)
    let base_dir = common_ctx.file in
-   let files_file = new_cpp_file common_ctx base_dir ([],"__files__") in
+   let files_file = new_cpp_file common_ctx base_dir ".cpp" ([],"__files__") in
    let output_files = (files_file#write) in
    let types = common_ctx.types in
    output_files "#include <hxcpp.h>\n\n";
@@ -2722,16 +2722,16 @@ let begin_header_file output_h def_string =
 let end_header_file output_h def_string =
    output_h ("\n#endif /* INCLUDED_" ^ def_string ^ " */ \n");;
 
-let new_placed_cpp_file common_ctx class_path =
+let new_placed_cpp_file common_ctx class_path extension =
    let base_dir = common_ctx.file in
 
    if (Common.defined common_ctx Define.Vcproj ) then begin
       make_class_directories base_dir ("src"::[]);
       cached_source_writer common_ctx
          ( base_dir ^ "/src/" ^ ( String.concat "-" (fst class_path) ) ^ "-" ^
-         (snd class_path) ^ ".cpp")
+         (snd class_path) ^ extension)
    end else
-      new_cpp_file common_ctx common_ctx.file class_path;;
+      new_cpp_file common_ctx common_ctx.file extension class_path ;;
 
 
 
@@ -2741,7 +2741,7 @@ let generate_enum_files common_ctx enum_def super_deps meta file_info =
    let class_name =  just_class_name ^ "_obj" in
    let smart_class_name =  ("::" ^ (join_class_path class_path "::") )  in
    (*let cpp_file = new_cpp_file common_ctx.file class_path in*)
-   let cpp_file = new_placed_cpp_file common_ctx class_path in
+   let cpp_file = new_placed_cpp_file common_ctx class_path ".cpp" in
    let output_cpp = (cpp_file#write) in
    let debug = if (has_meta_key enum_def.e_meta Meta.NoDebug) || ( Common.defined  common_ctx Define.NoDebug)
       then 0 else 1 in
@@ -3001,6 +3001,11 @@ let access_str a = match a with
    | AccInline -> "AccInline"
    | AccRequire(_,_) -> "AccRequire" ;;
 
+let rec get_extension meta = match meta with
+   | [] -> ".cpp"
+   | (Meta.TargetExtension,[EConst (String s), _],_) :: _ -> s
+   | _ :: tl -> get_extension tl
+
 let generate_class_files common_ctx member_types super_deps constructor_deps class_def file_info inScriptable =
    let class_path = class_def.cl_path in
    let class_name = (snd class_path) ^ "_obj" in
@@ -3008,7 +3013,7 @@ let generate_class_files common_ctx member_types super_deps constructor_deps cla
    let is_abstract_impl = match class_def.cl_kind with | KAbstractImpl _ -> true | _ -> false in
    let smart_class_name =  (snd class_path)  in
    (*let cpp_file = new_cpp_file common_ctx.file class_path in*)
-   let cpp_file = new_placed_cpp_file common_ctx class_path in
+   let cpp_file = new_placed_cpp_file common_ctx class_path (get_extension class_def.cl_meta) in
    let output_cpp = (cpp_file#write) in
    let debug = if (has_meta_key class_def.cl_meta Meta.NoDebug) || ( Common.defined  common_ctx Define.NoDebug)
       then 0 else 1 in
@@ -3718,7 +3723,7 @@ let generate_class_files common_ctx member_types super_deps constructor_deps cla
    depend_referenced;;
 
 let write_resources common_ctx =
-   let resource_file = new_cpp_file common_ctx common_ctx.file ([],"__resources__") in
+   let resource_file = new_cpp_file common_ctx common_ctx.file ".cpp" ([],"__resources__") in
    resource_file#write "#include <hxcpp.h>\n\n";
 
    let idx = ref 0 in
@@ -3755,10 +3760,8 @@ let write_resources common_ctx =
 let write_build_data common_ctx filename classes main_deps build_extra exe_name =
    let buildfile = open_out filename in
    let include_prefix = get_include_prefix common_ctx true in
-   let add_class_to_buildfile class_def =
-      let class_path = fst class_def in
-      let deps = snd class_def in
-      let cpp = (join_class_path class_path "/") ^ ".cpp" in
+   let add_class_to_buildfile (class_path,deps,extension) =
+      let cpp = (join_class_path class_path "/") ^ extension in
       output_string buildfile ( "  <file name=\"src/" ^ cpp ^ "\">\n" );
       let project_deps = List.filter (fun path -> not (is_internal_class path) ) deps in
       List.iter (fun path-> output_string buildfile ("   <depend name=\"" ^
@@ -3775,17 +3778,17 @@ let write_build_data common_ctx filename classes main_deps build_extra exe_name 
    output_string buildfile "<files id=\"haxe\">\n";
    output_string buildfile "<compilerflag value=\"-Iinclude\"/>\n";
    List.iter add_class_to_buildfile classes;
-   add_class_to_buildfile (  ( [] , "__boot__") , [] );
-   add_class_to_buildfile (  ( [] , "__files__") , [] );
-   add_class_to_buildfile (  ( [] , "__resources__") , [] );
+   add_class_to_buildfile (  ( [] , "__boot__") , [], ".cpp" );
+   add_class_to_buildfile (  ( [] , "__files__") , [], ".cpp" );
+   add_class_to_buildfile (  ( [] , "__resources__") , [], ".cpp" );
    output_string buildfile "</files>\n";
    output_string buildfile "<files id=\"__lib__\">\n";
    output_string buildfile "<compilerflag value=\"-Iinclude\"/>\n";
-   add_class_to_buildfile (  ( [] , "__lib__") , main_deps );
+   add_class_to_buildfile (  ( [] , "__lib__") , main_deps, ".cpp" );
    output_string buildfile "</files>\n";
    output_string buildfile "<files id=\"__main__\">\n";
    output_string buildfile "<compilerflag value=\"-Iinclude\"/>\n";
-   add_class_to_buildfile (  ( [] , "__main__") , main_deps );
+   add_class_to_buildfile (  ( [] , "__main__") , main_deps, ".cpp" );
    output_string buildfile "</files>\n";
    output_string buildfile ("<set name=\"HAXE_OUTPUT\" value=\"" ^ exe_name ^ "\" />\n");
    output_string buildfile "<include name=\"${HXCPP}/build-tool/BuildCommon.xml\"/>\n";
@@ -4632,7 +4635,7 @@ let generate_source common_ctx =
                init_classes := class_def.cl_path ::  !init_classes;
             let deps = generate_class_files common_ctx
                member_types super_deps constructor_deps class_def file_info scriptable in
-            exe_classes := (class_def.cl_path, deps)  ::  !exe_classes;
+            exe_classes := (class_def.cl_path, deps, get_extension class_def.cl_meta)  ::  !exe_classes;
          end
       | TEnumDecl enum_def when enum_def.e_extern -> ()
       | TEnumDecl enum_def ->
@@ -4647,7 +4650,7 @@ let generate_source common_ctx =
                (if (debug>1) then print_endline ("external enum " ^ name ));
             boot_classes := enum_def.e_path :: !boot_classes;
             let deps = generate_enum_files common_ctx enum_def super_deps meta file_info in
-            exe_classes := (enum_def.e_path, deps) :: !exe_classes;
+            exe_classes := (enum_def.e_path, deps, ".cpp") :: !exe_classes;
          end
       | TTypeDecl _ | TAbstractDecl _ -> (* already done *) ()
       );
