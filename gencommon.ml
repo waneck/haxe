@@ -3001,7 +3001,7 @@ struct
 				List.fold_left get_type_params acc ( tret :: List.map (fun (_,_,t) -> t) params )
 			| TDynamic t ->
 				(match t with | TDynamic _ -> acc | _ -> get_type_params acc t)
-			| TAbstract ({ a_impl = Some _ } as a, pl) ->
+			| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
 					get_type_params acc ( Codegen.Abstract.get_underlying_type a pl)
 			| TAnon a ->
 				PMap.fold (fun cf acc -> get_type_params acc cf.cf_type) a.a_fields acc
@@ -6309,7 +6309,7 @@ struct
 				| TArray(arr, idx) ->
 					let arr_etype = match follow arr.etype with
 					| (TInst _ as t) -> t
-					| TAbstract ({ a_impl = Some _ } as a, pl) ->
+					| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
 						follow (Codegen.Abstract.get_underlying_type a pl)
 					| t -> t in
 					let idx = match gen.greal_type idx.etype with
