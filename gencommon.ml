@@ -70,12 +70,14 @@ let rec like_float t =
 	match follow t with
 		| TAbstract({ a_path = ([], "Float") },[])
 		| TAbstract({ a_path = ([], "Int") },[]) -> true
+		| TAbstract({ a_path = ([_], ("Int64" | "UInt64")) } as a,[]) when Meta.has Meta.CoreType a.a_meta -> false
 		| TAbstract(a, _) -> List.exists (fun (t,_) -> like_float t) a.a_from || List.exists (fun (t,_) -> like_float t) a.a_to
 		| _ -> false
 
 let rec like_int t =
 	match follow t with
 		| TAbstract({ a_path = ([], "Int") },[]) -> true
+		| TAbstract({ a_path = ([_], ("Int64" | "UInt64")) } as a,[]) when Meta.has Meta.CoreType a.a_meta -> false
 		| TAbstract(a, _) -> List.exists (fun (t,_) -> like_int t) a.a_from || List.exists (fun (t,_) -> like_int t) a.a_to
 		| _ -> false
 
@@ -3001,7 +3003,7 @@ struct
 				List.fold_left get_type_params acc ( tret :: List.map (fun (_,_,t) -> t) params )
 			| TDynamic t ->
 				(match t with | TDynamic _ -> acc | _ -> get_type_params acc t)
-			| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
+			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 					get_type_params acc ( Codegen.Abstract.get_underlying_type a pl)
 			| TAnon a ->
 				PMap.fold (fun cf acc -> get_type_params acc cf.cf_type) a.a_fields acc
@@ -6309,7 +6311,7 @@ struct
 				| TArray(arr, idx) ->
 					let arr_etype = match follow arr.etype with
 					| (TInst _ as t) -> t
-					| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
+					| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 						follow (Codegen.Abstract.get_underlying_type a pl)
 					| t -> t in
 					let idx = match gen.greal_type idx.etype with

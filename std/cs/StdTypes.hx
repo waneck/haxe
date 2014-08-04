@@ -57,7 +57,7 @@ package cs;
 	@:op(~A) public static function bneg(t:Int64):Int64;
 	@:op(-A) public static function neg(t:Int64):Int64;
 }
-@:notNull @:runtimeValue @:coreType abstract UInt64 from Int
+@:notNull @:runtimeValue @:coreType abstract UInt64 from Int from Int64
 {
 	@:op(A+B) public static function addI(lhs:UInt64, rhs:Int):UInt64;
 	@:op(A+B) public static function add(lhs:UInt64, rhs:UInt64):UInt64;

@@ -48,7 +48,7 @@ let rec is_cs_basic_type t =
 			true
 		| TAbstract _ when like_float t ->
 			true
-		| TAbstract(a,pl) when Meta.has Meta.CoreType a.a_meta ->
+		| TAbstract(a,pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 			is_cs_basic_type (Codegen.Abstract.get_underlying_type a pl)
 		| TEnum(e, _) when not (Meta.has Meta.Class e.e_meta) -> true
 		| TInst(cl, _) when Meta.has Meta.Struct cl.cl_meta -> true
@@ -108,8 +108,6 @@ let is_tparam t =
 
 let rec is_int_float t =
 	match follow t with
-		| TInst( { cl_path = (["haxe"], "Int32") }, [] )
-		| TInst( { cl_path = (["haxe"], "Int64") }, [] )
 		| TInst( { cl_path = ([], "Int") }, [] )
 		| TAbstract ({ a_path = ([], "Int") },[])
 		| TInst( { cl_path = ([], "Float") }, [] )
@@ -708,12 +706,10 @@ let configure gen =
 			| TAbstract ({ a_path = ([],"Int") },[])
 			| TType ({ t_path = [],"UInt" },[])
 			| TAbstract ({ a_path = [],"UInt" },[])
-			| TType ({ t_path = ["haxe";"_Int64"], "NativeInt64" },[])
-			| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeInt64" },[])
-			| TType ({ t_path = ["haxe";"_Int64"], "NativeUInt64" },[])
-			| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeUInt64" },[])
-			| TType ({ t_path = ["cs"],"UInt64" },[])
-			| TAbstract ({ a_path = ["cs"],"UInt64" },[])
+			| TType ({ t_path = ["cs"], "Int64" },[])
+			| TAbstract ({ a_path = ["cs"], "Int64" },[])
+			| TType ({ t_path = ["cs"], "UInt64" },[])
+			| TAbstract ({ a_path = ["cs"], "UInt64" },[])
 			| TType ({ t_path = ["cs"],"UInt8" },[])
 			| TAbstract ({ a_path = ["cs"],"UInt8" },[])
 			| TType ({ t_path = ["cs"],"Int8" },[])
@@ -731,7 +727,7 @@ let configure gen =
 			| TType ({ t_path = [],"Single" },[])
 			| TAbstract ({ a_path = [],"Single" },[]) -> Some t
 			| TType ({ t_path = [],"Null" },[_]) -> Some t
-			| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
+			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 					Some (gen.gfollow#run_f ( Codegen.Abstract.get_underlying_type a pl) )
 			| TAbstract( { a_path = ([], "EnumValue") }, _	)
 			| TInst( { cl_path = ([], "EnumValue") }, _  ) -> Some t_dynamic
@@ -748,7 +744,7 @@ let configure gen =
 
 	let ifaces = Hashtbl.create 1 in
 
-	let ti64 = match ( get_type gen (["haxe";"_Int64"], "NativeInt64") ) with | TTypeDecl t -> TType(t,[]) | TAbstractDecl a -> TAbstract(a,[]) | _ -> assert false in
+	let ti64 = match ( get_type gen (["cs"], "Int64") ) with | TTypeDecl t -> TType(t,[]) | TAbstractDecl a -> TAbstract(a,[]) | _ -> assert false in
 
 	let ttype = get_cl ( get_type gen (["System"], "Type") ) in
 
@@ -762,7 +758,7 @@ let configure gen =
 	let rec real_type t =
 		let t = gen.gfollow#run_f t in
 		let ret = match t with
-			| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
+			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 				real_type (Codegen.Abstract.get_underlying_type a pl)
 			| TInst( { cl_path = (["haxe"], "Int32") }, [] ) -> gen.gcon.basic.tint
 			| TInst( { cl_path = (["haxe"], "Int64") }, [] ) -> ti64
@@ -858,12 +854,10 @@ let configure gen =
 			| TAbstract ({ a_path = ([],"Int") },[]) -> "int"
 			| TType ({ t_path = [],"UInt" },[])
 			| TAbstract ({ a_path = [],"UInt" },[]) -> "uint"
-			| TType ({ t_path = ["haxe";"_Int64"], "NativeInt64" },[])
-			| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeInt64" },[]) -> "long"
-			| TType ({ t_path = ["haxe";"_Int64"], "NativeUInt64" },[])
-			| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeUInt64" },[]) -> "ulong"
-			| TType ({ t_path = ["cs"],"UInt64" },[])
-			| TAbstract ({ a_path = ["cs"],"UInt64" },[]) -> "ulong"
+			| TType ({ t_path = ["cs"], "Int64" },[])
+			| TAbstract ({ a_path = ["cs"], "Int64" },[]) -> "long"
+			| TType ({ t_path = ["cs"], "UInt64" },[])
+			| TAbstract ({ a_path = ["cs"], "UInt64" },[]) -> "ulong"
 			| TType ({ t_path = ["cs"],"UInt8" },[])
 			| TAbstract ({ a_path = ["cs"],"UInt8" },[]) -> "byte"
 			| TType ({ t_path = ["cs"],"Int8" },[])
@@ -911,7 +905,7 @@ let configure gen =
 					| Statics _ | EnumStatics _ -> "System.Type"
 					| _ -> "object")
 			| TDynamic _ -> "object"
-			| TAbstract(a,pl) when Meta.has Meta.CoreType a.a_meta ->
+			| TAbstract(a,pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 				t_s (Codegen.Abstract.get_underlying_type a pl)
 			(* No Lazy type nor Function type made. That's because function types will be at this point be converted into other types *)
 			| _ -> if !strict_mode then begin trace ("[ !TypeError " ^ (Type.s_type (Type.print_context()) t) ^ " ]"); assert false end else "[ !TypeError " ^ (Type.s_type (Type.print_context()) t) ^ " ]"
@@ -1128,7 +1122,7 @@ let configure gen =
 						| TInt i32 ->
 							write w (Int32.to_string i32);
 							(*match real_type e.etype with
-								| TType( { t_path = (["haxe";"_Int64"], "NativeInt64") }, [] ) -> write w "L";
+								| TType( { t_path = (["cs"], "Int64") }, [] ) -> write w "L";
 								| _ -> ()
 							*)
 						| TFloat s ->

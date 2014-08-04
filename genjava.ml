@@ -91,8 +91,6 @@ let is_bool t =
 
 let is_int_float gen t =
 	match follow (gen.greal_type t) with
-		| TInst( { cl_path = (["haxe"], "Int64") }, [] )
-		| TInst( { cl_path = (["haxe"], "Int32") }, [] )
 		| TInst( { cl_path = ([], "Int") }, [] ) | TAbstract( { a_path =	([], "Int") }, [] )
 		| TInst( { cl_path = ([], "Float") }, [] ) | TAbstract( { a_path =	([], "Float") }, [] ) ->
 			true
@@ -866,7 +864,7 @@ let configure gen =
 			| TType ({ t_path = [],"Single" },[])
 			| TAbstract ({ a_path = [],"Single" },[])
 			| TType ({ t_path = [],"Null" },[_]) -> Some t
-			| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
+			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 					Some (gen.gfollow#run_f ( Codegen.Abstract.get_underlying_type a pl) )
 			| TAbstract( { a_path = ([], "EnumValue") }, _ )
 			| TInst( { cl_path = ([], "EnumValue") }, _  ) -> Some t_dynamic
@@ -883,7 +881,7 @@ let configure gen =
 	let rec real_type t =
 		let t = gen.gfollow#run_f t in
 		match t with
-			| TAbstract (a, pl) when Meta.has Meta.CoreType a.a_meta ->
+			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 				real_type (Codegen.Abstract.get_underlying_type a pl)
 			| TInst( { cl_path = (["haxe"], "Int32") }, [] ) -> gen.gcon.basic.tint
 			| TInst( { cl_path = (["haxe"], "Int64") }, [] ) -> ti64
