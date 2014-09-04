@@ -1531,7 +1531,7 @@ struct
 
 	let reduce_compatible compatible = match fewer_optionals [] (rm_duplicates [] compatible) with
 		| [] -> []
-		(* | [v] -> [v] *)
+		| [v] -> [v]
 		| compatible ->
 			(* convert compatible into ( rate * compatible_type ) list *)
 			let rec mk_rate acc elist args = match elist, args with

@@ -714,21 +714,26 @@ let unify_field_call ctx fa el args r p inline =
 	let map_cf cf = monomorphs cf.cf_params cf.cf_type,cf in
 	let candidates,map = match fa with
 		| FStatic(_,cf) | FAnon cf ->
-			(map_cf cf) :: (List.map map_cf cf.cf_overloads),(fun t -> t)
+			(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads),(fun t -> t)
 		| FInstance(c,tl,cf) ->
-			(map_cf cf) :: (Typeload.get_overloads c cf.cf_name),(apply_params c.cl_params tl)
+			let cfl = if cf.cf_name = "new" then
+				List.map map_cf cf.cf_overloads
+			else
+				Typeload.get_overloads c cf.cf_name
+			in
+			(map_cf {cf with cf_type = TFun(args,r)}) :: cfl,(apply_params c.cl_params tl)
 		| _ ->
 			error "Invalid field call" p
 	in
 	let is_forced_inline = false in
 	let candidates,failures = List.fold_left (fun (candidates,failures) (t,cf) ->
 		begin try
-			begin match follow (map t) with
+			begin match follow (map (monomorphs cf.cf_params t)) with
 				| TFun(args,ret) ->
-					let el,tf = unify_call_args ctx el args r p inline is_forced_inline in
+					let el,tf = unify_call_args ctx el args ret p inline is_forced_inline in
 					let mk_call ethis =
 						let ef = mk (TField(ethis,fa)) tf p in
-						make_call ctx ef el r p
+						make_call ctx ef el ret p
 					in
 					((List.map (fun e -> e,false) el),tf,mk_call) :: candidates,failures
 				| _ ->
@@ -2879,7 +2884,7 @@ and type_expr ctx (e,p) (with_type:with_type) =
 		let el = e1 :: el in
 		let v = gen_local ctx tmap in
 		let ev = mk (TLocal v) tmap p in
-		let ef = mk (TField(ev,FInstance(c,[tkey;tval],cf))) (tfun [tkey;tval] ctx.t.tvoid) p in
+		let ef = mk (TField(ev,FInstance(c,[],cf))) (tfun [tkey;tval] ctx.t.tvoid) p in
 		let el = ev :: List.fold_left (fun acc e -> match fst e with
 			| EBinop(OpArrow,e1,e2) ->
 				let e1,e2 = type_arrow e1 e2 in
