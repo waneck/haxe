@@ -641,7 +641,7 @@ let is_forced_inline c cf =
 	| _ when Meta.has Meta.Extern cf.cf_meta -> true
 	| _ -> false
 
-let unify_call_args ctx el args r p inline force_inline =
+let unify_call_args' ctx el args r p inline force_inline =
 	let call_error err p =
 		raise (Error (Call_error err,p))
 	in
@@ -676,18 +676,18 @@ let unify_call_args ctx el args r p inline force_inline =
 		| _,[name,false,t] when (match follow t with TAbstract({a_path = ["haxe"],"Rest"},_) -> true | _ -> false) ->
 			begin match follow t with
 				| TAbstract({a_path=(["haxe"],"Rest")},[t]) ->
-					(try List.map (type_against t) el with WithTypeError(ul,p) -> arg_error ul name false p)
+					(try List.map (fun e -> type_against t e,false) el with WithTypeError(ul,p) -> arg_error ul name false p)
 				| _ ->
 					assert false
 			end
 		| [],(_,false,_) :: _ ->
 			call_error Not_enough_arguments p
-		| [],(name,_,t) :: args ->
+		| [],(name,true,t) :: args ->
 			begin match loop [] args with
 				| [] when not (inline && (ctx.g.doinline || force_inline)) && not ctx.com.config.pf_pad_nulls -> []
 				| args ->
 					let e_def = default_value name t in
-					e_def :: args
+					(e_def,true) :: args
 			end
 		| (_,p) :: _, [] ->
 			begin match List.rev !skipped with
@@ -697,12 +697,12 @@ let unify_call_args ctx el args r p inline force_inline =
 		| e :: el,(name,opt,t) :: args ->
 			begin try
 				let e = type_against t e in
-				e :: loop el args
+				(e,opt) :: loop el args
 			with
 				WithTypeError (ul,p) ->
 					if opt then
 						let e_def = skip name ul t in
-						e_def :: loop (e :: el) args
+						(e_def,true) :: loop (e :: el) args
 					else
 						arg_error ul name false p
 			end
@@ -710,13 +710,20 @@ let unify_call_args ctx el args r p inline force_inline =
 	let el = loop el args in
 	el,TFun(args,r)
 
+let unify_call_args ctx el args r p inline force_inline =
+	let el,tf = unify_call_args' ctx el args r p inline force_inline in
+	List.map fst el,tf
+
 let unify_field_call ctx fa el args r p inline =
 	let map_cf cf = monomorphs cf.cf_params cf.cf_type,cf in
+	let expand_overloads cf =
+		(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads)
+	in
 	let candidates,map,mk_fa = match fa with
 		| FStatic(c,cf) ->
-			(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads),(fun t -> t),(fun cf -> FStatic(c,cf))
+			expand_overloads cf,(fun t -> t),(fun cf -> FStatic(c,cf))
 		| FAnon cf ->
-			(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads),(fun t -> t),(fun cf -> FAnon cf)
+			expand_overloads cf,(fun t -> t),(fun cf -> FAnon cf)
 		| FInstance(c,tl,cf) ->
 			let cfl = if cf.cf_name = "new" then
 				List.map map_cf cf.cf_overloads
@@ -738,12 +745,12 @@ let unify_field_call ctx fa el args r p inline =
 		begin try
 			begin match follow (map (monomorphs cf.cf_params t)) with
 				| TFun(args,ret) ->
-					let el,tf = unify_call_args ctx el args ret p inline is_forced_inline in
+					let el,tf = unify_call_args' ctx el args ret p inline is_forced_inline in
 					let mk_call ethis =
 						let ef = mk (TField(ethis,mk_fa cf)) tf p in
-						make_call ctx ef el ret p
+						make_call ctx ef (List.map fst el) ret p
 					in
-					((List.map (fun e -> e,false) el),tf,mk_call) :: candidates,failures
+					(el,tf,mk_call) :: candidates,failures
 				| _ ->
 					assert false
 			end
@@ -751,14 +758,18 @@ let unify_field_call ctx fa el args r p inline =
 			candidates,err :: failures
 		end
 	) ([],[]) candidates in
-	match Codegen.Overloads.reduce_compatible candidates with
+	let candidates = if ctx.com.config.pf_overload then
+		Codegen.Overloads.reduce_compatible candidates
+	else
+		List.rev candidates
+	in
+	match candidates with
 		| [] ->
 			begin match List.rev failures with
 				| err :: _ -> raise err
 				| _ -> assert false
 			end
-		| [el,tf,mk_call] -> List.map fst el,tf,mk_call
-		| _ -> error "I guess this is the ambiguous case" p
+		| (el,tf,mk_call) :: _ -> List.map fst el,tf,mk_call
 
 let fast_enum_field e ef p =
 	let et = mk (TTypeExpr (TEnumDecl e)) (TAnon { a_fields = PMap.empty; a_status = ref (EnumStatics e) }) p in
