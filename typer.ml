@@ -711,53 +711,41 @@ let unify_call_args ctx el args r p inline force_inline =
 	el,TFun(args,r)
 
 let unify_field_call ctx fa el args r p inline =
-	let unify_call_args fa args r =
-		let is_forced_inline = match fa with
-			| FStatic(c,cf) | FInstance(c,_,cf) -> is_forced_inline (Some c) cf
-			| FAnon cf -> is_forced_inline None cf
-			| _ -> false
-		in
-		let el,tf = unify_call_args ctx el args r p inline is_forced_inline in
-		let mk_call ethis =
-			let ef = mk (TField(ethis,fa)) tf p in
-			make_call ctx ef el r p
-		in
-		el,tf,mk_call
+	let map_cf cf = monomorphs cf.cf_params cf.cf_type,cf in
+	let candidates,map = match fa with
+		| FStatic(_,cf) | FAnon cf ->
+			(map_cf cf) :: (List.map map_cf cf.cf_overloads),(fun t -> t)
+		| FInstance(c,tl,cf) ->
+			(map_cf cf) :: (Typeload.get_overloads c cf.cf_name),(apply_params c.cl_params tl)
+		| _ ->
+			error "Invalid field call" p
 	in
-	try
-		unify_call_args fa args r
-	with Error (Call_error _,_) as err ->
-		(* Let's try overloads *)
-		let rec loop cfl f map = match cfl with
-			| cf :: cfl ->
-				begin try
-					begin match follow (map (monomorphs cf.cf_params cf.cf_type)) with
-						| TFun(args,ret) -> unify_call_args (f cf) args ret
-						| _ -> assert false
-					end
-				with Error (Call_error _,_) ->
-					loop cfl f map
-				end
-			| [] ->
-				raise err
-		in
-		let check_overloads c cf f map =
-			let overloads = if cf.cf_name = "new" then
-				cf.cf_overloads
-			else
-				List.map snd (Typeload.get_overloads c cf.cf_name)
-			in
-			loop overloads f map
-		in
-		match fa with
-			| FStatic(c,cf) when cf.cf_overloads <> [] ->
-				loop (List.rev cf.cf_overloads) (fun cf -> FStatic(c,cf)) (fun t -> t)
-			| FInstance(c,tl,cf) ->
-				check_overloads c cf (fun cf -> FInstance(c,tl,cf)) (apply_params c.cl_params tl)
-			| FAnon cf when cf.cf_overloads <> [] ->
-				loop cf.cf_overloads (fun cf -> FAnon cf) (fun t -> t)
-			| _ ->
-				raise err
+	let is_forced_inline = false in
+	let candidates,failures = List.fold_left (fun (candidates,failures) (t,cf) ->
+		begin try
+			begin match follow (map t) with
+				| TFun(args,ret) ->
+					let el,tf = unify_call_args ctx el args r p inline is_forced_inline in
+					let mk_call ethis =
+						let ef = mk (TField(ethis,fa)) tf p in
+						make_call ctx ef el r p
+					in
+					((List.map (fun e -> e,false) el),tf,mk_call) :: candidates,failures
+				| _ ->
+					assert false
+			end
+		with Error (Call_error _,_) as err ->
+			candidates,err :: failures
+		end
+	) ([],[]) candidates in
+	match Codegen.Overloads.reduce_compatible candidates with
+		| [] ->
+			begin match List.rev failures with
+				| err :: _ -> raise err
+				| _ -> assert false
+			end
+		| [el,tf,mk_call] -> List.map fst el,tf,mk_call
+		| _ -> error "I guess this is the ambiguous case" p
 
 let fast_enum_field e ef p =
 	let et = mk (TTypeExpr (TEnumDecl e)) (TAnon { a_fields = PMap.empty; a_status = ref (EnumStatics e) }) p in
