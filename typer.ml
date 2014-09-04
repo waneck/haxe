@@ -714,10 +714,10 @@ let unify_call_args ctx el args r p inline force_inline =
 	let el,tf = unify_call_args' ctx el args r p inline force_inline in
 	List.map fst el,tf
 
-let unify_field_call ctx fa el args r p inline =
+let unify_field_call ctx fa el args ret p inline =
 	let map_cf cf = monomorphs cf.cf_params cf.cf_type,cf in
 	let expand_overloads cf =
-		(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads)
+		(TFun(args,ret),cf) :: (List.map map_cf cf.cf_overloads)
 	in
 	let candidates,map,mk_fa = match fa with
 		| FStatic(c,cf) ->
@@ -725,7 +725,7 @@ let unify_field_call ctx fa el args r p inline =
 		| FAnon cf ->
 			expand_overloads cf,(fun t -> t),(fun cf -> FAnon cf)
 		| FInstance(c,tl,cf) ->
-			let cfl = if cf.cf_name = "new" then
+			let cfl = if cf.cf_name = "new" || not ctx.com.config.pf_overload then
 				List.map map_cf cf.cf_overloads
 			else
 				Typeload.get_overloads c cf.cf_name
@@ -736,14 +736,14 @@ let unify_field_call ctx fa el args r p inline =
 				if List.length tl <> List.length c.cl_params then Printf.printf "%s %s.%s %i %i\n" epos (s_type_path c.cl_path) cf.cf_name (List.length c.cl_params) (List.length tl); *)
 				apply_params c.cl_params tl t
 			in
-			(map_cf {cf with cf_type = TFun(args,r)}) :: cfl,map,(fun cf -> FInstance(c,tl,cf))
+			(TFun(args,ret),cf) :: cfl,map,(fun cf -> FInstance(c,tl,cf))
 		| _ ->
 			error "Invalid field call" p
 	in
 	let is_forced_inline = false in
 	let candidates,failures = List.fold_left (fun (candidates,failures) (t,cf) ->
 		begin try
-			begin match follow (map (monomorphs cf.cf_params t)) with
+			begin match follow (map t) with
 				| TFun(args,ret) ->
 					let el,tf = unify_call_args' ctx el args ret p inline is_forced_inline in
 					let mk_call ethis =
