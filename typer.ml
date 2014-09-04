@@ -641,7 +641,67 @@ let is_forced_inline c cf =
 	| _ when Meta.has Meta.Extern cf.cf_meta -> true
 	| _ -> false
 
-let rec unify_call_args ctx ?(overloads=None) cf el args r p inline =
+let unify_call_args ctx infos el args r p inline =
+	let call_error err p =
+		raise (Error (Call_error err,p))
+	in
+	let arg_error ul name opt p =
+		let err = Stack (Unify ul,Custom ("For " ^ (if opt then "optional " else "") ^ "function argument '" ^ name ^ "'")) in
+		call_error (Could_not_unify err) p
+	in
+	let rec default_value name t =
+		if is_pos_infos t then
+			let infos = mk_infos ctx p [] in
+			let e = type_expr ctx infos (WithType t) in
+			e
+		else
+			null (ctx.t.tnull t) p
+	in
+	let skipped = ref [] in
+	let skip name ul t =
+		if not ctx.com.config.pf_can_skip_non_nullable_argument && not (is_nullable t) then
+			call_error (Cannot_skip_non_nullable name) p;
+		skipped := (name,ul) :: !skipped;
+		default_value name t
+	in
+	let force_inline = false in
+	let rec loop el args = match el,args with
+		| [],[] ->
+			[]
+		| [],(_,false,_) :: _ ->
+			call_error Not_enough_arguments p
+		| [],(name,_,t) :: args ->
+			begin match loop [] args with
+				| [] when not (inline && (ctx.g.doinline || force_inline)) && not ctx.com.config.pf_pad_nulls -> []
+				| args ->
+					let e_def = default_value name t in
+					e_def :: args
+			end
+		| (_,p) :: _, [] ->
+			begin match List.rev !skipped with
+				| [] -> call_error Too_many_arguments p
+				| (s,ul) :: _ -> arg_error ul s true p
+			end
+		| e :: el,(name,opt,t) :: args ->
+			begin try
+				let e = type_expr ctx e (WithTypeResume t) in
+				(try unify_raise ctx e.etype t e.epos with Error (Unify l,p) -> raise (WithTypeError (l,p)));
+				let e = Codegen.AbstractCast.check_cast ctx t e p in
+				e :: loop el args
+			with
+				WithTypeError (ul,p) ->
+					if opt then
+						let e_def = skip name ul t in
+						e_def :: loop (e :: el) args
+					else
+						arg_error ul name false p
+			end
+	in
+	let el = loop el args in
+	el,TFun(args,r)
+
+
+(* let rec unify_call_args ctx ?(overloads=None) cf el args r p inline =
 	(* 'overloads' will carry a ( return_result ) list, called 'compatible' *)
 	(* it's used to correctly support an overload selection algorithm *)
 	let overloads, compatible, legacy = match cf, overloads with
@@ -789,7 +849,7 @@ let rec unify_call_args ctx ?(overloads=None) cf el args r p inline =
 					else
 						arg_error ul name false p
 	in
-	loop [] el args [] is_extern
+	loop [] el args [] is_extern *)
 
 let fast_enum_field e ef p =
 	let et = mk (TTypeExpr (TEnumDecl e)) (TAnon { a_fields = PMap.empty; a_status = ref (EnumStatics e) }) p in
@@ -914,6 +974,38 @@ let make_call ctx e params t p =
 			raise Exit)
 	with Exit ->
 		mk (TCall (e,params)) t p
+
+let unify_field_call ctx ethis fa el args r p inline =
+	let unify_call_args fa args r =
+		let el,tf = unify_call_args ctx None el args r p inline in
+		let ef = mk (TField(ethis,fa)) tf p in
+		make_call ctx ef el (match tf with TFun(_,r) -> r | _ -> assert false) p
+	in
+	try
+		unify_call_args fa args r
+	with Error (Call_error _,_) as err ->
+		let rec loop cfl f = match cfl with
+			| cf :: cfl ->
+				begin try
+					begin match follow cf.cf_type with
+						| TFun(args,ret) -> unify_call_args (f cf) args ret
+						| _ -> assert false
+					end
+				with Error (Call_error _,_) ->
+					loop cfl f
+				end
+			| [] ->
+				raise err
+		in
+		match fa with
+			| FStatic(c,cf) when cf.cf_overloads <> [] ->
+				loop cf.cf_overloads (fun cf -> FStatic(c,cf))
+			| FInstance(c,cf) when cf.cf_overloads <> [] ->
+				loop cf.cf_overloads (fun cf -> FInstance(c,cf))
+			| FAnon cf when cf.cf_overloads <> [] ->
+				loop cf.cf_overloads (fun cf -> FAnon cf)
+			| _ ->
+				raise err
 
 let rec acc_get ctx g p =
 	match g with
@@ -1739,7 +1831,7 @@ let type_generic_function ctx (e,cf) el ?(using_param=None) with_type p =
 		in
 		let e = if stat then type_type ctx c.cl_path p else e in
 		let e = acc_get ctx (field_access ctx MCall cf2 (if stat then FStatic (c,cf2) else FInstance (c,cf2)) cf2.cf_type e p) p in
-		(el,ret,e)
+		make_call ctx e el ret p
 	with Codegen.Generic_Exception (msg,p) ->
 		error msg p)
 
@@ -3775,19 +3867,18 @@ and build_call ctx acc el (with_type:with_type) p =
 	in
 	match acc with
 	| AKInline (ethis,f,fmode,t) when Meta.has Meta.Generic f.cf_meta ->
-		let el,t,e = type_generic_function ctx (ethis,f) el with_type p in
-		make_call ctx e el t p
+		type_generic_function ctx (ethis,f) el with_type p
 	| AKInline (ethis,f,fmode,t) ->
-		let params, tfunc = (match follow t with
-			| TFun (args,r) -> unify_call_args ctx (fopts ethis.etype f) el args r p true
-			| _ -> error (s_type (print_context()) t ^ " cannot be called") p
-		) in
-		make_call ctx (mk (TField (ethis,fmode)) t p) params (match tfunc with TFun(_,r) -> r | _ -> assert false) p
+		begin match follow t with
+			| TFun (args,r) ->
+				unify_field_call ctx ethis fmode el args r p true
+			| _ ->
+				error (s_type (print_context()) t ^ " cannot be called") p
+		end
 	| AKUsing (et,cl,ef,eparam) when Meta.has Meta.Generic ef.cf_meta ->
 		(match et.eexpr with
 		| TField(ec,_) ->
-			let el,t,e = type_generic_function ctx (ec,ef) el ~using_param:(Some eparam) with_type p in
-			make_call ctx e el t p
+			type_generic_function ctx (ec,ef) el ~using_param:(Some eparam) with_type p
 		| _ -> assert false)
 	| AKUsing (et,cl,ef,eparam) ->
 		begin match ef.cf_kind with
@@ -3873,36 +3964,38 @@ and build_call ctx acc el (with_type:with_type) p =
 	| AKExpr e ->
 		let rec loop t = match follow t with
 		| TFun (args,r) ->
-			let fopts = (match acc with
-				| AKExpr {eexpr = TField(e, (FStatic (_,f) | FInstance(_,f) | FAnon(f)))} ->
-					fopts e.etype f
+			begin match e.eexpr with
+				| TField(e1,fa) ->
+					begin match fa with
+						| FInstance(_,cf) | FStatic(_,cf) when Meta.has Meta.Generic cf.cf_meta ->
+							type_generic_function ctx (e1,cf) el with_type p
+						| _ ->
+							unify_field_call ctx e1 fa el args r p false
+					end
 				| _ ->
-					None
-			) in
-			(match fopts,acc with
-				| Some (_,cf),AKExpr({eexpr = TField(e,_)}) when Meta.has Meta.Generic cf.cf_meta ->
-					type_generic_function ctx (e,cf) el with_type p
-				| _ ->
-					let el, tfunc = unify_call_args ctx fopts el args r p false in
-					el,(match tfunc with TFun(_,r) -> r | _ -> assert false), {e with etype = tfunc})
+					let el, tfunc = unify_call_args ctx None el args r p false in
+					let r = match tfunc with TFun(_,r) -> r | _ -> assert false in
+					mk (TCall ({e with etype = tfunc},el)) r p
+			end
 		| TAbstract(a,tl) when Meta.has Meta.Callable a.a_meta ->
 			loop (Abstract.get_underlying_type a tl)
 		| TMono _ ->
 			let t = mk_mono() in
 			let el = List.map (fun e -> type_expr ctx e Value) el in
 			unify ctx (tfun (List.map (fun e -> e.etype) el) t) e.etype e.epos;
-			el, t, e
+			mk (TCall (e,el)) t p
 		| t ->
 			let el = List.map (fun e -> type_expr ctx e Value) el in
-			el, (if t == t_dynamic then
+			let t = if t == t_dynamic then
 				t_dynamic
 			else if ctx.untyped then
 				mk_mono()
 			else
-				error (s_type (print_context()) e.etype ^ " cannot be called") e.epos), e
+				error (s_type (print_context()) e.etype ^ " cannot be called") e.epos
+			in
+			mk (TCall (e,el)) t p
 		in
-		let el , t, e = loop e.etype in
-		mk (TCall (e,el)) t p
+		loop e.etype
 
 (* ---------------------------------------------------------------------- *)
 (* FINALIZATION *)
