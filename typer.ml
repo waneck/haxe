@@ -700,156 +700,49 @@ let unify_call_args ctx infos el args r p inline =
 	let el = loop el args in
 	el,TFun(args,r)
 
-
-(* let rec unify_call_args ctx ?(overloads=None) cf el args r p inline =
-	(* 'overloads' will carry a ( return_result ) list, called 'compatible' *)
-	(* it's used to correctly support an overload selection algorithm *)
-	let overloads, compatible, legacy = match cf, overloads with
-		| Some(TInst(c,pl),f), None when ctx.com.config.pf_overload && Meta.has Meta.Overload f.cf_meta ->
-				let overloads = List.filter (fun (_,f2) ->
-					not (f == f2) && (f2.cf_public || can_access ctx ~in_overload:true c f2 false)
-				) (Typeload.get_overloads c f.cf_name) in
-				if overloads = [] then (* is static function *)
-					let overloads = List.map (fun f -> f.cf_type, f) f.cf_overloads in
-					let is_static = f.cf_name <> "new" in
-					List.filter (fun (_,f) -> can_access ctx ~in_overload:true c f is_static) overloads, [], false
-				else
-					overloads, [], false
-		| Some(_,f), None ->
-				List.map (fun f -> f.cf_type, f) f.cf_overloads, [], true
-		| _, Some s ->
-				s
-		| _ -> [], [], true
+let unify_field_call ctx fa el args r p inline =
+	let unify_call_args fa args r =
+		let el,tf = unify_call_args ctx None el args r p inline in
+		let mk_call ethis =
+			let ef = mk (TField(ethis,fa)) tf p in
+			make_call ctx ef el r p
+		in
+		el,tf,mk_call
 	in
-	let next ?retval () =
-		let compatible = Option.map_default (fun r -> r :: compatible) compatible retval in
-		match cf, overloads with
-		| Some (TInst(c,pl),_), (ft,o) :: l ->
-			let o = { o with cf_type = ft } in
-			let args, ret = (match follow (apply_params c.cl_params pl (field_type ctx c pl o p)) with (* I'm getting non-followed types here. Should it happen? *)
-				| TFun (tl,t) -> tl, t
-				| _ -> assert false
-			) in
-			Some (unify_call_args ctx ~overloads:(Some (l,compatible,legacy)) (Some (TInst(c,pl),o)) el args ret p inline)
-		| Some (t,_), (ft,o) :: l ->
-			let o = { o with cf_type = ft } in
-			let args, ret = (match Type.field_type o with
-				| TFun (tl,t) -> tl, t
-				| _ -> assert false
-			) in
-			Some (unify_call_args ctx ~overloads:(Some (l,compatible,legacy)) (Some (t, o)) el args ret p inline)
-		| _ ->
-			match compatible with
-			| [] -> None
-			| [acc,t] -> Some (List.map fst acc, t)
-			| comp ->
-				match Codegen.Overloads.reduce_compatible compatible with
-				| [acc,t] -> Some (List.map fst acc, t)
-				| (acc,t) :: _ -> (* ambiguous overload *)
-					let name = match cf with | Some(_,f) -> "'" ^ f.cf_name ^ "' " | _ -> "" in
-					let format_amb = String.concat "\n" (List.map (fun (_,t) ->
-						"Function " ^ name ^ "with type " ^ (s_type (print_context()) t)
-					) compatible) in
-					display_error ctx ("This call is ambiguous between the following methods:\n" ^ format_amb) p;
-					Some (List.map fst acc,t)
-				| [] -> None
-	in
-	let fun_details() =
-		let format_arg = (fun (name,opt,_) -> (if opt then "?" else "") ^ name) in
-		"Function " ^ (match cf with None -> "" | Some (_,f) -> "'" ^ f.cf_name ^ "' ") ^ "requires " ^ (if args = [] then "no arguments" else "arguments : " ^ String.concat ", " (List.map format_arg args))
-	in
-	let invalid_skips = ref [] in
-	let error acc txt =
-		match next() with
-		| Some l -> l
-		| None ->
-		display_error ctx (txt ^ " arguments\n" ^ (fun_details())) p;
-		List.rev (List.map fst acc), (TFun(args,r))
-	in
-	let arg_error ul name opt p =
-		match next() with
-		| Some l -> l
-		| None -> raise (Error (Stack (Unify ul,Custom ("For " ^ (if opt then "optional " else "") ^ "function argument '" ^ name ^ "'")), p))
-	in
-	let rec no_opt = function
-		| [] -> []
-		| ({ eexpr = TConst TNull },true) :: l -> no_opt l
-		| l -> l
-	in
-	let rec default_value t po =
-		if is_pos_infos t then
-			let infos = mk_infos ctx p [] in
-			let e = type_expr ctx infos (WithType t) in
-			(e, true)
-		else begin
-			if not ctx.com.config.pf_can_skip_non_nullable_argument then begin match po with
-				| Some (name,p) when not (is_nullable t) -> invalid_skips := (name,p) :: !invalid_skips;
-				| _ -> ()
-			end;
-			(null (ctx.t.tnull t) p, true)
-		end
-	in
-	let force_inline, is_extern = match cf with Some(TInst(c,_),f) -> is_forced_inline (Some c) f, c.cl_extern | _ -> false, false in
-	let rec loop acc l l2 skip check_rest =
-		match l , l2 with
-		| [] , [] ->
-			begin match !invalid_skips with
-				| [] -> ()
-				| skips -> List.iter (fun (name,p) -> display_error ctx ("Cannot skip non-nullable argument " ^ name) p) skips
-			end;
-			let args,tf = if not (inline && (ctx.g.doinline || force_inline)) && not ctx.com.config.pf_pad_nulls then
-				List.rev (no_opt acc), (TFun(args,r))
+	try
+		unify_call_args fa args r
+	with Error (Call_error _,_) as err ->
+		(* Let's try overloads *)
+		let rec loop cfl f map = match cfl with
+			| cf :: cfl ->
+				begin try
+					begin match follow (map (monomorphs cf.cf_params cf.cf_type)) with
+						| TFun(args,ret) -> unify_call_args (f cf) args ret
+						| _ -> assert false
+					end
+				with Error (Call_error _,_) ->
+					loop cfl f map
+				end
+			| [] ->
+				raise err
+		in
+		let check_overloads c cf f map =
+			let overloads = if cf.cf_name = "new" then
+				cf.cf_overloads
 			else
-				List.rev (acc), (TFun(args,r))
+				List.map snd (Typeload.get_overloads c cf.cf_name)
 			in
-			if not legacy && ctx.com.config.pf_overload then
-				match next ~retval:(args,tf) () with
-				| Some l -> l
-				| None ->
-					display_error ctx ("No overloaded function matches the arguments. Are the arguments correctly typed?") p;
-					List.map fst args, tf
-			else
-				List.map fst args, tf
-		| l , [(name,opt,t)] when check_rest ->
-			(match follow t with
-				| TAbstract({a_path=(["haxe"],"Rest")},[t]) ->
-					let rec process acc el =
-						match el with
-						| [] -> acc
-						| ee :: rest ->
-							let e = type_expr ctx ee (WithTypeResume t) in
-							begin try
-								unify_raise ctx e.etype t e.epos
-							with Error (Unify ul,p) ->
-								raise (Error (Stack (Unify ul,Custom ("For rest function argument '" ^ name ^ "'")), p))
-							end;
-							process ((Codegen.AbstractCast.check_cast ctx t e p,false) :: acc) rest
-					in
-					loop (process acc l) [] [] skip false
-				| _ ->
-					loop acc l l2 skip false)
-		| [] , (_,false,_) :: _ ->
-			error (List.fold_left (fun acc (_,_,t) -> default_value t None :: acc) acc l2) "Not enough"
-		| [] , (name,true,t) :: l ->
-			loop (default_value t None :: acc) [] l skip check_rest
-		| _ , [] ->
-			(match List.rev skip with
-			| [] -> error acc "Too many"
-			| [name,ul] -> arg_error ul name true p
-			| (name,ul) :: _ -> arg_error (Unify_custom ("Invalid arguments\n" ^ fun_details()) :: ul) name true p)
-		| ee :: l, (name,opt,t) :: l2 ->
-			try
-				let e = type_expr ctx ee (WithTypeResume t) in
-				(try unify_raise ctx e.etype t e.epos with Error (Unify l,p) -> raise (WithTypeError (l,p)));
-				loop ((Codegen.AbstractCast.check_cast ctx t e p,false) :: acc) l l2 skip check_rest
-			with
-				WithTypeError (ul,p) ->
-					if opt then
-						loop (default_value t (Some (name,p)) :: acc) (ee :: l) l2 ((name,ul) :: skip) check_rest
-					else
-						arg_error ul name false p
-	in
-	loop [] el args [] is_extern *)
+			loop overloads f map
+		in
+		match fa with
+			| FStatic(c,cf) when cf.cf_overloads <> [] ->
+				loop (List.rev cf.cf_overloads) (fun cf -> FStatic(c,cf)) (fun t -> t)
+			| FInstance(c,tl,cf) ->
+				check_overloads c cf (fun cf -> FInstance(c,tl,cf)) (apply_params c.cl_params tl)
+			| FAnon cf when cf.cf_overloads <> [] ->
+				loop cf.cf_overloads (fun cf -> FAnon cf) (fun t -> t)
+			| _ ->
+				raise err
 
 let fast_enum_field e ef p =
 	let et = mk (TTypeExpr (TEnumDecl e)) (TAnon { a_fields = PMap.empty; a_status = ref (EnumStatics e) }) p in
@@ -974,38 +867,6 @@ let make_call ctx e params t p =
 			raise Exit)
 	with Exit ->
 		mk (TCall (e,params)) t p
-
-let unify_field_call ctx ethis fa el args r p inline =
-	let unify_call_args fa args r =
-		let el,tf = unify_call_args ctx None el args r p inline in
-		let ef = mk (TField(ethis,fa)) tf p in
-		make_call ctx ef el (match tf with TFun(_,r) -> r | _ -> assert false) p
-	in
-	try
-		unify_call_args fa args r
-	with Error (Call_error _,_) as err ->
-		let rec loop cfl f map = match cfl with
-			| cf :: cfl ->
-				begin try
-					begin match follow (map (monomorphs cf.cf_params cf.cf_type)) with
-						| TFun(args,ret) -> unify_call_args (f cf) args ret
-						| _ -> assert false
-					end
-				with Error (Call_error _,_) ->
-					loop cfl f map
-				end
-			| [] ->
-				raise err
-		in
-		match fa with
-			| FStatic(c,cf) when cf.cf_overloads <> [] ->
-				loop cf.cf_overloads (fun cf -> FStatic(c,cf)) (fun t -> t)
-			| FInstance(c,tl,cf) when cf.cf_overloads <> [] ->
-				loop cf.cf_overloads (fun cf -> FInstance(c,tl,cf)) (apply_params c.cl_params tl)
-			| FAnon cf when cf.cf_overloads <> [] ->
-				loop cf.cf_overloads (fun cf -> FAnon cf) (fun t -> t)
-			| _ ->
-				raise err
 
 let rec acc_get ctx g p =
 	match g with
@@ -3310,7 +3171,8 @@ and type_expr ctx (e,p) (with_type:with_type) =
 		let unify_constructor_call c params f ct = match follow ct with
 			| TFun (args,r) ->
 				(try
-					fst (unify_call_args ctx (Some (TInst(c,params),f)) el args r p false)
+					let el,_,_ = unify_field_call ctx (FInstance(c,params,f)) el args r p false in
+					el
 				with Error (e,p) ->
 					display_error ctx (error_msg e) p;
 					[])
@@ -3834,19 +3696,18 @@ and type_call ctx e el (with_type:with_type) p =
 			e
 	| (EConst (Ident "super"),sp) , el ->
 		if ctx.curfun <> FunConstructor then error "Cannot call super constructor outside class constructor" p;
-		let el, t = (match ctx.curclass.cl_super with
-		| None -> error "Current class does not have a super" p
-		| Some (c,params) ->
-			let ct, f = get_constructor ctx c params p in
-			let el, _ = (match follow ct with
-			| TFun (args,r) ->
-				unify_call_args ctx (Some (TInst(c,params),f)) el args r p false
-			| _ ->
-				error "Constructor is not a function" p
-			) in
-			el , TInst (c,params)
-		) in
-		mk (TCall (mk (TConst TSuper) t sp,el)) ctx.t.tvoid p
+		begin match ctx.curclass.cl_super with
+			| None -> error "Current class does not have a super" p
+			| Some (c,tl) ->
+				let ct, cf = get_constructor ctx c tl p in
+				match follow ct with
+					| TFun (args,ret) ->
+						let el,tf,_ = unify_field_call ctx (FInstance(c,tl,cf)) el args ret p false in
+						let esuper = mk (TConst TSuper) (TInst(c,tl)) sp in
+						make_call ctx esuper el (match tf with TFun(_,r) -> r | _ -> assert false) p
+					| _ ->
+						error "Constructor is not a function" p
+		end
 	| _ ->
 		def ()
 
@@ -3866,7 +3727,8 @@ and build_call ctx acc el (with_type:with_type) p =
 	| AKInline (ethis,f,fmode,t) ->
 		begin match follow t with
 			| TFun (args,r) ->
-				unify_field_call ctx ethis fmode el args r p true
+				let _,_,mk_call = unify_field_call ctx fmode el args r p true in
+				mk_call ethis
 			| _ ->
 				error (s_type (print_context()) t ^ " cannot be called") p
 		end
@@ -3965,7 +3827,8 @@ and build_call ctx acc el (with_type:with_type) p =
 						| FInstance(_,_,cf) | FStatic(_,cf) when Meta.has Meta.Generic cf.cf_meta ->
 							type_generic_function ctx (e1,cf) el with_type p
 						| _ ->
-							unify_field_call ctx e1 fa el args r p false
+							let _,_,mk_call = unify_field_call ctx fa el args r p false in
+							mk_call e1
 					end
 				| _ ->
 					let el, tfunc = unify_call_args ctx None el args r p false in
