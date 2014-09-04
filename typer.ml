@@ -641,7 +641,7 @@ let is_forced_inline c cf =
 	| _ when Meta.has Meta.Extern cf.cf_meta -> true
 	| _ -> false
 
-let unify_call_args ctx infos el args r p inline =
+let unify_call_args ctx el args r p inline =
 	let call_error err p =
 		raise (Error (Call_error err,p))
 	in
@@ -665,9 +665,22 @@ let unify_call_args ctx infos el args r p inline =
 		default_value name t
 	in
 	let force_inline = false in
+	let type_against t e =
+		let e = type_expr ctx e (WithTypeResume t) in
+		(try unify_raise ctx e.etype t e.epos with Error (Unify l,p) -> raise (WithTypeError (l,p)));
+		let e = Codegen.AbstractCast.check_cast ctx t e p in
+		e
+	in
 	let rec loop el args = match el,args with
 		| [],[] ->
 			[]
+		| _,[name,false,t] when (match follow t with TAbstract({a_path = ["haxe"],"Rest"},_) -> true | _ -> false) ->
+			begin match follow t with
+				| TAbstract({a_path=(["haxe"],"Rest")},[t]) ->
+					(try List.map (type_against t) el with WithTypeError(ul,p) -> arg_error ul name false p)
+				| _ ->
+					assert false
+			end
 		| [],(_,false,_) :: _ ->
 			call_error Not_enough_arguments p
 		| [],(name,_,t) :: args ->
@@ -684,9 +697,7 @@ let unify_call_args ctx infos el args r p inline =
 			end
 		| e :: el,(name,opt,t) :: args ->
 			begin try
-				let e = type_expr ctx e (WithTypeResume t) in
-				(try unify_raise ctx e.etype t e.epos with Error (Unify l,p) -> raise (WithTypeError (l,p)));
-				let e = Codegen.AbstractCast.check_cast ctx t e p in
+				let e = type_against t e in
 				e :: loop el args
 			with
 				WithTypeError (ul,p) ->
@@ -702,7 +713,7 @@ let unify_call_args ctx infos el args r p inline =
 
 let unify_field_call ctx fa el args r p inline =
 	let unify_call_args fa args r =
-		let el,tf = unify_call_args ctx None el args r p inline in
+		let el,tf = unify_call_args ctx el args r p inline in
 		let mk_call ethis =
 			let ef = mk (TField(ethis,fa)) tf p in
 			make_call ctx ef el r p
@@ -1645,7 +1656,7 @@ let type_generic_function ctx (e,cf) el ?(using_param=None) with_type p =
 		| WithTypeResume t -> (try unify_raise ctx ret t p with Error (Unify l,_) -> raise (WithTypeError(l,p)))
 		| _ -> ()
 	end;
-	let el,_ = unify_call_args ctx None el args ret p false in
+	let el,_ = unify_call_args ctx el args ret p false in
 	let el = match using_param with None -> el | Some e -> e :: el in
 	(try
 		let gctx = Codegen.make_generic ctx cf.cf_params monos p in
@@ -3756,7 +3767,7 @@ and build_call ctx acc el (with_type:with_type) p =
 				| TFun ((_,_,t1) :: args,r) ->
 					unify ctx tthis t1 eparam.epos;
 					let ef = prepare_using_field ef in
-					begin match unify_call_args ctx (Some (TInst(cl,[]),ef)) el args r p (ef.cf_kind = Method MethInline) with
+					begin match unify_call_args ctx el args r p (ef.cf_kind = Method MethInline) with
 					| el,TFun(args,r) -> el,args,r,(if is_abstract_impl_call then eparam else Codegen.AbstractCast.check_cast ctx t1 eparam eparam.epos)
 					| _ -> assert false
 					end
@@ -3831,7 +3842,7 @@ and build_call ctx acc el (with_type:with_type) p =
 							mk_call e1
 					end
 				| _ ->
-					let el, tfunc = unify_call_args ctx None el args r p false in
+					let el, tfunc = unify_call_args ctx el args r p false in
 					let r = match tfunc with TFun(_,r) -> r | _ -> assert false in
 					mk (TCall ({e with etype = tfunc},el)) r p
 			end
@@ -4535,7 +4546,7 @@ let type_macro ctx mode cpath f (el:Ast.expr list) p =
 			incr index;
 			(EArray ((EArrayDecl [e],p),(EConst (Int (string_of_int (!index))),p)),p)
 		) el in
-		let elt, _ = unify_call_args mctx (Some (TInst(mclass,[]),mfield)) constants (List.map fst eargs) t_dynamic p false in
+		let elt, _ = unify_call_args mctx constants (List.map fst eargs) t_dynamic p false in
 		List.iter (fun f -> f()) (!todo);
 		List.map2 (fun (_,ise) e ->
 			let e, et = (match e.eexpr with
@@ -4622,7 +4633,7 @@ let type_macro ctx mode cpath f (el:Ast.expr list) p =
 
 let call_macro ctx path meth args p =
 	let mctx, (margs,_,mclass,mfield), call = load_macro ctx path meth p in
-	let el, _ = unify_call_args mctx (Some (TInst(mclass,[]),mfield)) args margs t_dynamic p false in
+	let el, _ = unify_call_args mctx args margs t_dynamic p false in
 	call (List.map (fun e -> try Interp.make_const e with Exit -> error "Parameter should be a constant" e.epos) el)
 
 let call_init_macro ctx e =
