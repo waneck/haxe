@@ -240,7 +240,7 @@ let field_type ctx c pl f p =
 		apply_params l monos f.cf_type
 
 let class_field ctx c pl name p =
-	raw_class_field (fun f -> field_type ctx c pl f p) c name
+	raw_class_field (fun f -> field_type ctx c pl f p) c pl name
 
 (* checks if we can access to a given class field using current context *)
 let rec can_access ctx ?(in_overload=false) c cf stat =
@@ -712,16 +712,24 @@ let unify_call_args ctx el args r p inline force_inline =
 
 let unify_field_call ctx fa el args r p inline =
 	let map_cf cf = monomorphs cf.cf_params cf.cf_type,cf in
-	let candidates,map = match fa with
-		| FStatic(_,cf) | FAnon cf ->
-			(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads),(fun t -> t)
+	let candidates,map,mk_fa = match fa with
+		| FStatic(c,cf) ->
+			(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads),(fun t -> t),(fun cf -> FStatic(c,cf))
+		| FAnon cf ->
+			(map_cf {cf with cf_type = TFun(args,r)}) :: (List.map map_cf cf.cf_overloads),(fun t -> t),(fun cf -> FAnon cf)
 		| FInstance(c,tl,cf) ->
 			let cfl = if cf.cf_name = "new" then
 				List.map map_cf cf.cf_overloads
 			else
 				Typeload.get_overloads c cf.cf_name
 			in
-			(map_cf {cf with cf_type = TFun(args,r)}) :: cfl,(apply_params c.cl_params tl)
+			let map t =
+(* 				let error_printer file line = Printf.sprintf "%s:%d:" file line in
+				let epos = Lexer.get_error_pos error_printer p in
+				if List.length tl <> List.length c.cl_params then Printf.printf "%s %s.%s %i %i\n" epos (s_type_path c.cl_path) cf.cf_name (List.length c.cl_params) (List.length tl); *)
+				apply_params c.cl_params tl t
+			in
+			(map_cf {cf with cf_type = TFun(args,r)}) :: cfl,map,(fun cf -> FInstance(c,tl,cf))
 		| _ ->
 			error "Invalid field call" p
 	in
@@ -732,7 +740,7 @@ let unify_field_call ctx fa el args r p inline =
 				| TFun(args,ret) ->
 					let el,tf = unify_call_args ctx el args ret p inline is_forced_inline in
 					let mk_call ethis =
-						let ef = mk (TField(ethis,fa)) tf p in
+						let ef = mk (TField(ethis,mk_fa cf)) tf p in
 						make_call ctx ef el ret p
 					in
 					((List.map (fun e -> e,false) el),tf,mk_call) :: candidates,failures
@@ -830,7 +838,7 @@ let make_call ctx e params t p =
 	try
 		let ethis, fname = (match e.eexpr with TField (ethis,f) -> ethis, field_name f | _ -> raise Exit) in
 		let f, cl = (match follow ethis.etype with
-			| TInst (c,params) -> (try let _,_,f = Type.class_field c fname in f with Not_found -> raise Exit), Some c
+			| TInst (c,params) -> (try let _,_,f = Type.class_field c params fname in f with Not_found -> raise Exit), Some c
 			| TAnon a -> (try PMap.find fname a.a_fields with Not_found -> raise Exit), (match !(a.a_status) with Statics c -> Some c | _ -> None)
 			| _ -> raise Exit
 		) in
@@ -1228,8 +1236,8 @@ let rec type_ident_raise ?(imported_enums=true) ctx i p mode =
 	with Not_found -> try
 		(* member variable lookup *)
 		if ctx.curfun = FunStatic then raise Not_found;
-		let c , t , f = class_field ctx ctx.curclass [] i p in
-		field_access ctx mode f (match c with None -> FAnon f | Some c -> FInstance (c,(List.map snd c.cl_params),f)) t (get_this ctx p) p
+		let c , t , f = class_field ctx ctx.curclass (List.map snd ctx.curclass.cl_params) i p in
+		field_access ctx mode f (match c with None -> FAnon f | Some (c,tl) -> FInstance (c,tl,f)) t (get_this ctx p) p
 	with Not_found -> try
 		(* lookup using on 'this' *)
 		if ctx.curfun = FunStatic then raise Not_found;
@@ -1353,14 +1361,14 @@ and type_field ?(resume=false) ctx e i p mode =
 				| MCall, _ ->
 					()
 				| MGet,Var _
-				| MSet,Var _ when (match c2 with Some { cl_extern = true; cl_path = ("flash" :: _,_) } -> true | _ -> false) ->
+				| MSet,Var _ when (match c2 with Some ({ cl_extern = true; cl_path = ("flash" :: _,_) },_) -> true | _ -> false) ->
 					()
 				| _, Method _ ->
 					display_error ctx "Cannot create closure on super method" p
 				| _ ->
 					display_error ctx "Normal variables cannot be accessed with 'super', use 'this' instead" p);
 			if not (can_access ctx c f false) && not ctx.untyped then display_error ctx ("Cannot access private field " ^ i) p;
-			field_access ctx mode f (match c2 with None -> FAnon f | Some c -> FInstance (c,params,f)) (apply_params c.cl_params params t) e p
+			field_access ctx mode f (match c2 with None -> FAnon f | Some (c,tl) -> FInstance (c,tl,f)) (apply_params c.cl_params params t) e p
 		with Not_found -> try
 			using_field ctx mode e i p
 		with Not_found -> try
@@ -1591,7 +1599,7 @@ let unify_int ctx e k =
 		| TAnon a ->
 			(try is_dynamic (PMap.find f a.a_fields).cf_type with Not_found -> false)
 		| TInst (c,pl) ->
-			(try is_dynamic (apply_params c.cl_params pl ((let _,t,_ = Type.class_field c f in t))) with Not_found -> false)
+			(try is_dynamic (apply_params c.cl_params pl ((let _,t,_ = Type.class_field c pl f in t))) with Not_found -> false)
 		| _ ->
 			true
 	in
@@ -2884,7 +2892,7 @@ and type_expr ctx (e,p) (with_type:with_type) =
 		let el = e1 :: el in
 		let v = gen_local ctx tmap in
 		let ev = mk (TLocal v) tmap p in
-		let ef = mk (TField(ev,FInstance(c,[],cf))) (tfun [tkey;tval] ctx.t.tvoid) p in
+		let ef = mk (TField(ev,FInstance(c,[tkey;tval],cf))) (tfun [tkey;tval] ctx.t.tvoid) p in
 		let el = ev :: List.fold_left (fun acc e -> match fst e with
 			| EBinop(OpArrow,e1,e2) ->
 				let e1,e2 = type_arrow e1 e2 in
@@ -3203,14 +3211,16 @@ and type_expr ctx (e,p) (with_type:with_type) =
 			| mt ->
 				error ((s_type_path (t_infos mt).mt_path) ^ " cannot be constructed") p
 		in
-		let ct = (match t with
-			| TAbstract (a,pl) ->
-				(match a.a_impl with
-				| None -> t
-				| Some c -> TInst (c,pl))
-			| _ -> t
-		) in
-		(match ct with
+		let build_constructor_call c tl =
+			let ct, f = get_constructor ctx c tl p in
+			if not (can_access ctx c f true || is_parent c ctx.curclass) && not ctx.untyped then display_error ctx "Cannot access private constructor" p;
+			(match f.cf_kind with
+			| Var { v_read = AccRequire (r,msg) } -> (match msg with Some msg -> error msg p | None -> error_require r p)
+			| _ -> ());
+			let el = unify_constructor_call c tl f ct in
+			f,el
+		in
+		(match t with
 		| TInst ({cl_kind = KTypeParameter tl} as c,params) ->
 			if not (Typeload.is_generic_parameter ctx c) then error "Only generic type parameters can be constructed" p;
 			let el = List.map (fun e -> type_expr ctx e Value) el in
@@ -3225,21 +3235,15 @@ and type_expr ctx (e,p) (with_type:with_type) =
 				| _ -> false
 			) tl) then error (s_type_path c.cl_path ^ " does not have a constructor") p;
 			mk (TNew (c,params,el)) t p
-		| TInst (c,params) ->
-			let ct, f = get_constructor ctx c params p in
-			if not (can_access ctx c f true || is_parent c ctx.curclass) && not ctx.untyped then display_error ctx "Cannot access private constructor" p;
-			(match f.cf_kind with
-			| Var { v_read = AccRequire (r,msg) } -> (match msg with Some msg -> error msg p | None -> error_require r p)
-			| _ -> ());
-			let el = unify_constructor_call c params f ct in
-			(match c.cl_kind with
-			| KAbstractImpl a when not (Meta.has Meta.MultiType a.a_meta) ->
-				let ta = TAnon { a_fields = c.cl_statics; a_status = ref (Statics c) } in
-				let e = mk (TTypeExpr (TClassDecl c)) ta p in
-				let e = mk (TField (e,(FStatic (c,f)))) ct p in
-				make_call ctx e el t p
-			| _ ->
-				mk (TNew (c,params,el)) t p)
+		| TAbstract({a_impl = Some c} as a,tl) when not (Meta.has Meta.MultiType a.a_meta) ->
+			let cf,el = build_constructor_call c tl in
+			let ta = TAnon { a_fields = c.cl_statics; a_status = ref (Statics c) } in
+			let e = mk (TTypeExpr (TClassDecl c)) ta p in
+			let e = mk (TField (e,(FStatic (c,cf)))) t p in
+			make_call ctx e el t p
+		| TInst (c,tl) | TAbstract ({a_impl = Some c},tl) ->
+			let _,el = build_constructor_call c tl in
+			mk (TNew (c,tl,el)) t p
 		| _ ->
 			error (s_type (print_context()) t ^ " cannot be constructed") p)
 	| EUnop (op,flag,e) ->
@@ -3830,7 +3834,7 @@ and build_call ctx acc el (with_type:with_type) p =
 		let rec loop t = match follow t with
 		| TFun (args,r) ->
 			begin match e.eexpr with
-				| TField(e1,fa) ->
+				| TField(e1,fa) when not (match fa with FEnum _ -> true | _ -> false) ->
 					begin match fa with
 						| FInstance(_,_,cf) | FStatic(_,cf) when Meta.has Meta.Generic cf.cf_meta ->
 							type_generic_function ctx (e1,cf) el with_type p
