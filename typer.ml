@@ -728,7 +728,7 @@ let unify_field_call ctx fa el args ret p inline =
 			let cfl = if cf.cf_name = "new" || not (Meta.has Meta.Overload cf.cf_meta && ctx.com.config.pf_overload) then
 				List.map map_cf cf.cf_overloads
 			else
-				Typeload.get_overloads c cf.cf_name
+				List.map (fun (t,cf) -> (monomorphs cf.cf_params t), cf) (Typeload.get_overloads c cf.cf_name)
 			in
 			let map t =
 (* 				let error_printer file line = Printf.sprintf "%s:%d:" file line in
@@ -758,7 +758,6 @@ let unify_field_call ctx fa el args ret p inline =
 			candidates,err :: failures
 		end
 	) ([],[]) candidates in
-	(* List.iter (fun (el,tf,_) -> ctx.com.warning (s_type (print_context()) tf) p) candidates; *)
 	let candidates = if is_overload && ctx.com.config.pf_overload then
 		Codegen.Overloads.reduce_compatible candidates
 	else
