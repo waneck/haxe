@@ -719,13 +719,13 @@ let unify_field_call ctx fa el args ret p inline =
 	let expand_overloads cf =
 		(TFun(args,ret),cf) :: (List.map map_cf cf.cf_overloads)
 	in
-	let candidates,map,mk_fa = match fa with
+	let is_overload,candidates,map,mk_fa = match fa with
 		| FStatic(c,cf) ->
-			expand_overloads cf,(fun t -> t),(fun cf -> FStatic(c,cf))
+			Meta.has Meta.Overload cf.cf_meta,expand_overloads cf,(fun t -> t),(fun cf -> FStatic(c,cf))
 		| FAnon cf ->
-			expand_overloads cf,(fun t -> t),(fun cf -> FAnon cf)
+			Meta.has Meta.Overload cf.cf_meta,expand_overloads cf,(fun t -> t),(fun cf -> FAnon cf)
 		| FInstance(c,tl,cf) ->
-			let cfl = if cf.cf_name = "new" || not ctx.com.config.pf_overload then
+			let cfl = if cf.cf_name = "new" || not (Meta.has Meta.Overload cf.cf_meta && ctx.com.config.pf_overload) then
 				List.map map_cf cf.cf_overloads
 			else
 				Typeload.get_overloads c cf.cf_name
@@ -736,7 +736,7 @@ let unify_field_call ctx fa el args ret p inline =
 				if List.length tl <> List.length c.cl_params then Printf.printf "%s %s.%s %i %i\n" epos (s_type_path c.cl_path) cf.cf_name (List.length c.cl_params) (List.length tl); *)
 				apply_params c.cl_params tl t
 			in
-			(TFun(args,ret),cf) :: cfl,map,(fun cf -> FInstance(c,tl,cf))
+			Meta.has Meta.Overload cf.cf_meta,(TFun(args,ret),cf) :: cfl,map,(fun cf -> FInstance(c,tl,cf))
 		| _ ->
 			error "Invalid field call" p
 	in
@@ -758,7 +758,8 @@ let unify_field_call ctx fa el args ret p inline =
 			candidates,err :: failures
 		end
 	) ([],[]) candidates in
-	let candidates = if ctx.com.config.pf_overload then
+	(* List.iter (fun (el,tf,_) -> ctx.com.warning (s_type (print_context()) tf) p) candidates; *)
+	let candidates = if is_overload && ctx.com.config.pf_overload then
 		Codegen.Overloads.reduce_compatible candidates
 	else
 		List.rev candidates
