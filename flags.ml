@@ -26,27 +26,27 @@ let empty = 0
 
 let tag (v : 'a) : int = 1 lsl (Obj.magic v)
 
-let is_empty this = this = 0
+let is_empty (this : 'a t) = this = 0
 
-let set this v =
+let set (this : 'a t) v =
 	this lor (tag v)
 
-let unset this v =
+let unset (this : 'a t) v =
 	this land (lnot (tag v))
 
-let has this v =
+let has (this : 'a t) v =
 	let t = tag v in
 	this land t = t
 
-let has_all this vl =
+let has_all (this : 'a t) vl =
 	List.for_all (has this) vl
 
-let has_any this vl =
+let has_any (this : 'a t) vl =
 	List.exists (has this) vl
 
 let from_list vl =
 	List.fold_left (fun ret v -> set ret v) 0 vl
 
-let (|+) this v = set this v
+let (|+) (this : 'a t) v = set this v
 
 let (|$) v1 v2 = set empty v1 |+ v2

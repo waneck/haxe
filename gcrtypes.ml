@@ -27,7 +27,6 @@ open Ast;;
 (* its main purpose is to be much closer to what the statically typed target can understand *)
 (* it also is designed to: *)
 (* generate less garbage on filters *)
-(* allow optimizations to happen *)
 (* make it easier (and cleaner) to generate new expressions *)
 
 type valuetype =
@@ -384,7 +383,7 @@ struct
 	let mkcls_params cls =
 		Array.init (Array.length cls.ctypes) (fun i -> mkt ~&(TypeParam i))
 
-	let mkthis gen = match gen.gfield.fstatic with
+	let mkthis gen = match Flags.has gen.gfield.fflags FStatic with
 	| true ->
 		let inst = mktr (Inst(gen.gcur, mkcls_params gen.gcur)) in
 		Const(Class inst) +* Type inst
@@ -466,7 +465,7 @@ struct
 		| _ -> false
 
 	let rec is_override f1 f2 =
-		if f1.foverload || f2.foverload then
+		if Flags.has f1.fflags FOverload || Flags.has f2.fflags FOverload then
 			same_overload_args f1 f2
 		else
 			true
@@ -487,7 +486,13 @@ struct
 		loop [] lst
 
 	let filter_map fn lst =
-		List.rev (rev_filter_map fn lst)
+		let rec loop = function
+			| [] -> []
+			| v :: lst -> match fn v with
+				| None -> loop lst
+				| Some v -> v :: (loop lst)
+		in
+		loop lst
 
 	let array_empty () =
 		Array.init 0 (fun _ -> assert false)
@@ -683,10 +688,8 @@ let alloc_field
 		~name
 		~ftype
 		~kind
-		?(public=false)
 		?(vis=VPrivate)
 		?override
-		?(overload=false)
 		?(flags = Flags.empty)
 		?(modifiers = [])
 		?(declared = null_cls) () =
@@ -695,12 +698,9 @@ let alloc_field
 	let f = {
 		fid = id;
 		fname = name;
-		fpublic = public;
 		fvis = vis;
 		ftype = ftype;
-		fstatic = static;
 		foverride = override;
-		foverload = overload;
 		fkind = kind;
 		fflags = flags;
 		fmodifiers = modifiers;
@@ -717,10 +717,8 @@ let alloc_stmt
 		?(block=[])
 		() =
 
-	let id = get_id stmt_id in
+	(* let id = get_id stmt_id in *)
 	{
-		s_id = id;
-		s_old_id = old_id;
 		s_temps = [];
 		s_declared_here = [];
 		s_block = block;
@@ -740,11 +738,7 @@ let alloc_var
 		vid = id;
 		vname = name;
 		vtype = vtype;
-		vexpr = expr;
-		vwrite = false;
 		vcaptured_by = [];
-		vmax = None;
-		vmin = None;
 		vkind = kind;
 	}
 
