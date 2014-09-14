@@ -22,7 +22,7 @@
 
 type ('a) t = int
 
-let empty = 0
+let empty : 'a t = 0
 
 let tag (v : 'a) : int = 1 lsl (Obj.magic v)
 

@@ -54,7 +54,7 @@ and reftype =
 	| Array of ct
 	| Type of ct
 	| Inst of cls * cparams
-	| Fun of funprop list * ct * (ct list)
+	| Fun of funprop list * (ct list) * ct
 
 and ctype =
 	| R of reftype
@@ -420,8 +420,8 @@ struct
 				{ ctype = SpecializedNull( r ); cextra = combine_cextra ct.cextra r.cextra }
 			| true, v ->
 				ensure_toplevel v)
-		| R(Fun(pl,ret,args)) ->
-			{ ct with ctype = ~*(Fun(pl,apply_cparams ~toplevel:false cls params ret, List.map (apply_cparams ~toplevel:false cls params) args)) }
+		| R(Fun(pl,args,ret)) ->
+			{ ct with ctype = ~*(Fun(pl, List.map (apply_cparams ~toplevel:false cls params) args,apply_cparams ~toplevel:false cls params ret)) }
 		| R(Pointer p) ->
 			{ ct with ctype = ~*(Pointer(apply_cparams ~toplevel:false cls params p)) }
 		| R(Vector v) ->
@@ -458,7 +458,7 @@ struct
 		| t1, t2 -> t1 = t2
 
 	let rec same_overload_args f1 f2 = match f1.ftype.ctype, f2.ftype.ctype with
-		| R(Fun(_,r1,a1)), R(Fun(_,r2,a2)) -> (try
+		| R(Fun(_,a1,r1)), R(Fun(_,a2,r2)) -> (try
 			List.for_all2 same_overload_arg a1 a2
 		with Invalid_argument("List.for_all2") ->
 			false)
