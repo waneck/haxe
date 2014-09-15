@@ -109,7 +109,6 @@ and intrinsic =
 	| IIs
 	| IIsConst of ct
 	| IAs of ct (* warning: no value types possible *)
-	| IRethrow
 	| IGetFields
 
 	(* others *)
@@ -136,12 +135,13 @@ and stat_t =
 	| VarDecl of var * expr option
 	| If of expr * statement * statement option
 	| While of expr * statement * Ast.while_flag
-	| Switch of expr * (const list * statement * switch_case_flag) list * statement option
+	| Switch of expr * (expr list * statement * switch_case_flag) list * statement option
 	| Try of statement * (var * statement) list
 	| Return of expr option
 	| Break
 	| Continue
 	| Throw of expr
+	| SIntrinsic of intrinsic_stat * statement list * expr list
 	| SExpr of expr
 
 and statement = {
@@ -149,6 +149,12 @@ and statement = {
 	mutable s_declared_here : var list;
 	mutable s_block : stat_t list;
 }
+
+and intrinsic_stat =
+	| SRethrow
+	| SLock
+		(* needs one expr argument *)
+	| SCustom of string
 
 and field_access = {
 	a_field : field;
@@ -757,7 +763,6 @@ let get_intrinsic name ct args = match name, ct.ctype, args with
 	| "__is__", _, _ -> IIs
 	| "__as__", _, [_, { expr = Const (Class c) }] ->
 			IAs c
-	| "__rethrow__", _, _ -> IRethrow
 	| "__fields__", _, _ -> IGetFields
 	| _ -> ICustom name
 
