@@ -345,7 +345,7 @@ struct
 			mktr (Fun( [VarFunc], List.map (fun (n,o,t) ->
 				c_type ctx t
 			) args,c_type ctx ret ))
-		| TAbstract(a,p) when Meta.has Meta.CoreType a.a_meta ->
+		| TAbstract(a,p) when not (Meta.has Meta.CoreType a.a_meta) ->
 			c_type ctx (Abstract.get_underlying_type a p)
 		| TDynamic _ -> mktr Dynamic
 		(* core type *)

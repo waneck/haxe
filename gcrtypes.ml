@@ -95,6 +95,8 @@ and funprop =
 
 and intrinsic =
 	(* general *)
+	| IObjectDecl of string list
+		(* string list represents the fields' name, in order of appearance *)
 	| IArrayDecl of ct
 	| IVectorDecl of ct
 	| INewVector of ct
