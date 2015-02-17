@@ -37,6 +37,26 @@ class TestInt64 extends Test {
 		exc( tryOverflow.bind(a) );	// Throws Overflow
 	}
 
+	// Some tests of how it generates Int64 when used as Null<Int64> or as type parameters
+	function testGen()
+	{
+		var arr:Array<Int64> = [];
+		arr.push(1);
+		arr.push(Int64.make(0xFFFFFFFF,0x80000000));
+		eq(arr[0].getHigh(), 0);
+		eq(arr[0].getLow(), 1);
+		eq(arr[1].getHigh(), 0xFFFFFFFF);
+		eq(arr[1].getLow(), 0x80000000);
+
+		var n:Null<Int64> = null;
+		eq(n, null);
+		var dyn:Dynamic = n;
+		eq(dyn, null);
+		n = Int64.make(0xf0f0f0f0, 0xefefefef);
+		eq(n.getHigh(), 0xf0f0f0f0);
+		eq(n.getLow(), 0xefefefef);
+	}
+
 	function tryOverflow( a : Int64 )
 	{
 		a.toInt();
