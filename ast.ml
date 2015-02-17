@@ -89,6 +89,7 @@ module Meta = struct
 		| IfFeature
 		| Impl
 		| PythonImport
+		| ImplicitCast
 		| Include
 		| InitPackage
 		| Internal
