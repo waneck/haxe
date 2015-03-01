@@ -971,10 +971,10 @@ module PatternMatchConversion = struct
 			| tmp -> ((tmp,ldt) :: cases)
 
 	let replace_locals e =
-		let v_known = ref [] in
+		let v_known = Hashtbl.create 0 in
 		let copy v =
 			let v' = alloc_var v.v_name v.v_type in
-			v_known := (v,v') :: !v_known;
+			Hashtbl.add v_known v.v_id v';
 			v'
 		in
 		let rec loop e = match e.eexpr with
@@ -996,7 +996,7 @@ module PatternMatchConversion = struct
 				) catches in
 				{e with eexpr = TTry(e1,catches)}
 			| TLocal v ->
-				let v' = try List.assq v !v_known with Not_found -> v in
+				let v' = try Hashtbl.find v_known v.v_id with Not_found -> v in
 				{e with eexpr = TLocal v'}
 			| _ ->
 				Type.map_expr loop e
