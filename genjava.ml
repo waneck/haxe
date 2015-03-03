@@ -3102,7 +3102,16 @@ let select_best com flist =
 		| f :: [] -> Some f
 		| f :: flist -> Some f (* pick one *)
 
+(**** begin normalize_jclass helpers ****)
+
+let fix_overrides_jclass com cls =
+	let force_check = Common.defined gen.gcon Define.ForceLibCheck in
+	()
+
 let normalize_jclass com cls =
+	(* after adding the noCheck metadata, this option will annotate what changes were needed *)
+	(* and that are now deprecated *)
+	let force_check = Common.defined gen.gcon Define.ForceLibCheck in
 	(* search static / non-static name clash *)
 	let nonstatics = ref [] in
 	List.iter (fun f ->
@@ -3133,7 +3142,7 @@ let normalize_jclass com cls =
 			all_fields := cls.cfields @ !all_fields;
 			super_fields := cls.cfields @ !super_fields;
 			let overriden = ref [] in
-			cmethods := List.map (fun jm ->
+			if force_check then cmethods := List.map (fun jm ->
 				(* TODO rewrite/standardize empty spaces *)
 				if not (is_override jm) && not(List.mem JStatic jm.jf_flags) && List.exists (fun msup ->
 					let ret = msup.jf_name = jm.jf_name && not(List.mem JStatic msup.jf_flags) && compatible_methods msup jm in
@@ -3251,6 +3260,8 @@ let normalize_jclass com cls =
 	let cfields = List.filter(fun f -> List.exists (fun f -> f = JPublic || f = JProtected) f.jf_flags) cfields in
 	let cmethods = loop [] cmethods in
 	{ cls with cfields = cfields; cmethods = cmethods }
+
+(**** end normalize_jclass helpers ****)
 
 let get_classes_zip zip =
 	let ret = ref [] in

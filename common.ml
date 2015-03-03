@@ -190,6 +190,7 @@ module Define = struct
 		| FileExtension
 		| FlashStrict
 		| FlashUseStage
+		| ForceLibCheck
 		| ForceNativeProperty
 		| FormatWarning
 		| GencommonDebug
@@ -274,6 +275,7 @@ module Define = struct
 		| FileExtension -> ("file_extension","Output filename extension for cpp source code")
 		| FlashStrict -> ("flash_strict","More strict typing for flash target")
 		| FlashUseStage -> ("flash_use_stage","Keep the SWF library initial stage")
+		| ForceLibCheck -> ("force_lib_check","Force the compiler to check -net-lib and -java-lib added classes")
 		| ForceNativeProperty -> ("force_native_property","Tag all properties with :nativeProperty metadata for 3.1 compatibility")
 		| FormatWarning -> ("format_warning","Print a warning for each formated string, for 2.x compatibility")
 		| GencommonDebug -> ("gencommon_debug","GenCommon internal")
