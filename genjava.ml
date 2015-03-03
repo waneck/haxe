@@ -3382,7 +3382,7 @@ let add_java_lib com file std =
 			end
 		with
 		| JReader.Error_message msg ->
-			if com.verbose then prerr_endline ("Class reader failed: " ^ msg);
+			prerr_endline ("Class reader failed: " ^ msg);
 			None
 		| e ->
 			if com.verbose then begin
