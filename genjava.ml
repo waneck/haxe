@@ -3170,6 +3170,7 @@ let normalize_jclass com cls =
 	let all_methods = cmethods @ super_methods in
 
 	(* look for interfaces and add missing implementations (may happen on abstracts or by vmsig differences *)
+	(* (no_check): even with nocheck enabled, we need to add these missing fields - otherwise we won't be able to use them from Haxe *)
 	let added_interface_fields = ref [] in
 	let rec loop_interface abstract cls iface = try
 		match iface with
@@ -3180,27 +3181,25 @@ let normalize_jclass com cls =
 				let cif = jclass_with_params com cif params in
 				List.iter (fun jf ->
 					if not(List.mem JStatic jf.jf_flags) && not (List.exists (fun jf2 -> jf.jf_name = jf2.jf_name && not (List.mem JStatic jf2.jf_flags) && jf.jf_signature = jf2.jf_signature) all_methods) then begin
-						let jf = if abstract then del_override jf else jf in
+						let jf = if abstract && force_check then del_override jf else jf in
 						let jf = { jf with jf_flags = JPublic :: jf.jf_flags } in (* interfaces implementations are always public *)
 
 						added_interface_fields := jf :: !added_interface_fields;
-						cmethods := jf :: !cmethods;
-						all_methods := jf :: !all_methods;
-						nonstatics := jf :: !nonstatics;
 					end
 				) cif.cmethods;
-				List.iter (loop_interface abstract cif) cif.cinterfaces;
+				(* we don't need to loop again in the interface, since these interfaces are already normalized *)
+				(* List.iter (loop_interface abstract cif) cif.cinterfaces; *)
 		with Not_found -> ()
 	in
-	(* another pass: *)
-	(* if List.mem JAbstract cls.cflags then List.iter loop_interface cls.cinterfaces; *)
-	(* if not (List.mem JInterface cls.cflags) then *)
+						(* cmethods := jf :: !cmethods; *)
+						(* all_methods := jf :: !all_methods; *)
+						(* nonstatics := jf :: !nonstatics; *)
 	List.iter (loop_interface (List.mem JAbstract cls.cflags) cls) cls.cinterfaces;
+
 	(* for each added field in the interface, lookup in super_methods possible methods to include *)
 	(* so we can choose the better method still *)
-
 	List.iter (fun im ->
-		let f = List.find_all (fun jf -> jf.jf_name = im.jf_name && compatible_methods jf im) !super_methods in
+		let f = List.find_all (fun jf -> jf.jf_name = im.jf_name && compatible_methods jf im) super_methods in
 		let f = List.map mk_override f in
 		cmethods := f @ !cmethods
 	) !added_interface_fields;
