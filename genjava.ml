@@ -3106,19 +3106,28 @@ let select_best com flist =
 
 let fix_overrides_jclass com cls =
 	let force_check = Common.defined com Define.ForceLibCheck in
-	let methods = cls.cmethods in
+	let methods = if force_check then List.map (fun f -> del_override f) cls.cmethods else cls.cmethods in
 	let cmethods = methods in
 	let super_fields = [] in
 	let super_methods = [] in
+	let nonstatics = List.filter (fun f -> not (List.mem JStatic f.jf_flags)) (cls.cfields @ cls.cmethods) in
 
-	let rec loop cls super_methods super_fields cmethods = try
+	let is_pub = fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags in
+	let cmethods, super_fields = if not (List.mem JInterface cls.cflags) then
+		List.filter is_pub cmethods,
+		List.filter is_pub super_fields
+	else
+		cmethods,super_fields
+	in
+
+	let rec loop cls super_methods super_fields cmethods nonstatics = try
 		match cls.csuper with
 		| TObject((["java";"lang"],"Object"),_) ->
-				super_methods,super_fields,cmethods
+				super_methods,super_fields,cmethods,nonstatics
 		| _ ->
 			let cls, params = jcl_from_jsig com cls.csuper in
 			let cls = jclass_with_params com cls params in
-			List.iter (fun f -> if not (List.mem JStatic f.jf_flags) then nonstatics := f :: !nonstatics) (cls.cfields @ cls.cmethods);
+			let nonstatics = (List.filter (fun f -> (List.mem JStatic f.jf_flags)) (cls.cfields @ cls.cmethods)) @ nonstatics in
 			let super_methods = cls.cmethods @ super_methods in
 			let super_fields = cls.cfields @ super_fields in
 			let cmethods = if force_check then begin
@@ -3141,11 +3150,11 @@ let fix_overrides_jclass com cls =
 			end else
 				cmethods
 			in
-			loop cls super_methods super_fields cmethods
+			loop cls super_methods super_fields cmethods nonstatics
 		with | Not_found ->
-			super_methods,super_fields,cmethods
+			super_methods,super_fields,cmethods,nonstatics
 	in
-	loop cls super_methods super_fields cmethods
+	loop cls super_methods super_fields cmethods nonstatics
 
 let normalize_jclass com cls =
 	(* after adding the noCheck metadata, this option will annotate what changes were needed *)
@@ -3157,13 +3166,9 @@ let normalize_jclass com cls =
 		if not(List.mem JStatic f.jf_flags) then nonstatics := f :: !nonstatics
 	) (cls.cfields @ cls.cmethods);
 	(* fix overrides *)
-	let super_methods, super_fields, cmethods = fix_overrides_jclass com cls in
-	if not (List.mem JInterface cls.cflags) then begin
-		cmethods := List.filter (fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags) !cmethods;
-		all_fields := List.filter (fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags) !all_fields;
-		super_fields := List.filter (fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags) !super_fields;
-	end;
-	loop cls;
+	let super_methods, super_fields, cmethods, nonstatics = fix_overrides_jclass com cls in
+	let all_methods = cmethods @ super_methods in
+
 	(* look for interfaces and add missing implementations (may happen on abstracts or by vmsig differences *)
 	let added_interface_fields = ref [] in
 	let rec loop_interface abstract cls iface = try
@@ -3174,7 +3179,7 @@ let normalize_jclass com cls =
 				let cif, params = jcl_from_jsig com iface in
 				let cif = jclass_with_params com cif params in
 				List.iter (fun jf ->
-					if not(List.mem JStatic jf.jf_flags) && not (List.exists (fun jf2 -> jf.jf_name = jf2.jf_name && not (List.mem JStatic jf2.jf_flags) && jf.jf_signature = jf2.jf_signature) !all_methods) then begin
+					if not(List.mem JStatic jf.jf_flags) && not (List.exists (fun jf2 -> jf.jf_name = jf2.jf_name && not (List.mem JStatic jf2.jf_flags) && jf.jf_signature = jf2.jf_signature) all_methods) then begin
 						let jf = if abstract then del_override jf else jf in
 						let jf = { jf with jf_flags = JPublic :: jf.jf_flags } in (* interfaces implementations are always public *)
 
