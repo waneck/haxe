@@ -1150,6 +1150,22 @@ let configure gen =
 		| _ -> false
 	in
 
+	let is_get_prop t name = match follow (run_follow gen t), field_access gen t name with
+		| TInst({ cl_interface = true; cl_extern = true } as cl, _), FNotFound ->
+			not (is_hxgen (TClassDecl cl))
+		| _, FClassField(_,_,decl,({ cf_kind = Var { v_read = AccCall } } as v),_,t,_) ->
+			Type.is_extern_field v && (Meta.has Meta.Property v.cf_meta || (decl.cl_extern && not (is_hxgen (TClassDecl decl))))
+		| _ -> false
+	in
+
+	let is_set_prop t name = match follow (run_follow gen t), field_access gen t name with
+		| TInst({ cl_interface = true; cl_extern = true } as cl, _), FNotFound ->
+			not (is_hxgen (TClassDecl cl))
+		| _, FClassField(_,_,decl,({ cf_kind = Var { v_write = AccCall } } as v),_,t,_) ->
+			Type.is_extern_field v && (Meta.has Meta.Property v.cf_meta || (decl.cl_extern && not (is_hxgen (TClassDecl decl))))
+		| _ -> false
+	in
+
 	let is_event t name = match follow (run_follow gen t), field_access gen t name with
 		| TInst({ cl_interface = true; cl_extern = true } as cl, _), FNotFound ->
 			not (is_hxgen (TClassDecl cl))
@@ -1213,7 +1229,7 @@ let configure gen =
 				| TCall( ({ eexpr = TField(ef,f) } as e), [] ) when String.starts_with (field_name f) "get_" ->
 					let name = field_name f in
 					let propname = String.sub name 4 (String.length name - 4) in
-					if is_extern_prop (gen.greal_type ef.etype) propname then begin
+					if is_get_prop (gen.greal_type ef.etype) propname then begin
 						expr_s w ef;
 						write w ".";
 						write_field w propname
@@ -1222,7 +1238,7 @@ let configure gen =
 				| TCall( ({ eexpr = TField(ef,f) } as e), [v] ) when String.starts_with (field_name f) "set_" ->
 					let name = field_name f in
 					let propname = String.sub name 4 (String.length name - 4) in
-					if is_extern_prop (gen.greal_type ef.etype) propname then begin
+					if is_set_prop (gen.greal_type ef.etype) propname then begin
 						expr_s w ef;
 						write w ".";
 						write_field w propname;
@@ -2408,18 +2424,24 @@ let configure gen =
 				| cf when String.starts_with cf.cf_name "get_" -> (try
 					(* find the property *)
 					let prop = find_prop (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
-					let v, t, get, set = !prop in
-					assert (get = None);
-					prop := (v,t,Some cf,set);
-					not interf
+					(match !prop with
+						| { cf_kind = Var { v_read = AccCall } }, _, _, _ ->
+							let v, t, get, set = !prop in
+							assert (get = None);
+							prop := (v,t,Some cf,set);
+							not interf
+						| _ -> raise Not_found)
 				with | Not_found -> true)
 				| cf when String.starts_with cf.cf_name "set_" -> (try
 					(* find the property *)
 					let prop = find_prop (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
-					let v, t, get, set = !prop in
-					assert (set = None);
-					prop := (v,t,get,Some cf);
-					not interf
+					(match !prop with
+						| { cf_kind = Var { v_write = AccCall } }, _, _, _ ->
+							let v, t, get, set = !prop in
+							assert (set = None);
+							prop := (v,t,get,Some cf);
+							not interf
+						| _ -> raise Not_found)
 				with | Not_found -> true)
 				| cf when String.starts_with cf.cf_name "add_" -> (try
 					let event = find_event (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in

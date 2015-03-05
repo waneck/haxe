@@ -523,6 +523,15 @@ class TestCSharp extends Test
 		eq("Type description test", attrib.Description);
 	}
 
+	public function testProp2()
+	{
+		// issue #3375
+		var s = new SomeStruct(10,20);
+		eq(s.prop, "10");
+		s.set_prop("100");
+		eq(s.prop,"100");
+	}
+
 	public function testEvents()
 	{
 		var x = new haxe.test.MyClass();
@@ -757,10 +766,23 @@ private class TestMyClass extends haxe.test.MyClass
 	public var int:Int;
 	public var float:Float;
 
+	@:property public var prop(get,never):String;
+
 	public function new(i,f)
 	{
 		this.int = i;
 		this.float = f;
+	}
+
+	private function get_prop():String
+	{
+		return int + "";
+	}
+
+	public function set_prop(v:String):String
+	{
+		this.int = Std.parseInt(v);
+		return v;
 	}
 }
 
