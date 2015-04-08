@@ -870,6 +870,23 @@ let configure gen =
 	let rec real_type t =
 		let t = gen.gfollow#run_f t in
 		let ret = match t with
+			| TAbstract({ a_path = ([], "Null") }, [t]) ->
+				(*
+					Null<> handling is a little tricky.
+					It will only change to haxe.lang.Null<> when the actual type is non-nullable or a type parameter
+					It works on cases such as Hash<T> returning Null<T> since cast_detect will invoke real_type at the original type,
+					Null<T>, which will then return the type haxe.lang.Null<>
+				*)
+				if erase_generics then
+					if is_cs_basic_type t then
+						t_dynamic
+					else
+						real_type t
+				else
+					(match real_type t with
+						| TInst( { cl_kind = KTypeParameter _ }, _ ) -> TInst(null_t, [t])
+						| _ when is_cs_basic_type t -> TInst(null_t, [t])
+						| _ -> real_type t)
 			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 				real_type (Abstract.get_underlying_type a pl)
 			| TAbstract ({ a_path = (["cs";"_Flags"], "EnumUnderlying") }, [t]) ->
@@ -896,23 +913,6 @@ let configure gen =
 			| TInst(cl, params) when Meta.has Meta.Enum cl.cl_meta ->
 				TInst(cl, List.map (fun _ -> t_dynamic) params)
 			| TInst(cl, params) -> TInst(cl, change_param_type (TClassDecl cl) params)
-			| TAbstract({ a_path = ([], "Null") }, [t]) ->
-				(*
-					Null<> handling is a little tricky.
-					It will only change to haxe.lang.Null<> when the actual type is non-nullable or a type parameter
-					It works on cases such as Hash<T> returning Null<T> since cast_detect will invoke real_type at the original type,
-					Null<T>, which will then return the type haxe.lang.Null<>
-				*)
-				if erase_generics then
-					if is_cs_basic_type t then
-						t_dynamic
-					else
-						real_type t
-				else
-					(match real_type t with
-						| TInst( { cl_kind = KTypeParameter _ }, _ ) -> TInst(null_t, [t])
-						| _ when is_cs_basic_type t -> TInst(null_t, [t])
-						| _ -> real_type t)
 			| TAbstract _
 			| TType _ -> t
 			| TAnon (anon) when (match !(anon.a_status) with | Statics _ | EnumStatics _ | AbstractStatics _ -> true | _ -> false) -> t

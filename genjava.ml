@@ -921,6 +921,14 @@ let configure gen =
 	let rec real_type t =
 		let t = gen.gfollow#run_f t in
 		match t with
+			| TAbstract({ a_path = ([], "Null") }, [t]) when is_java_basic_type (gen.gfollow#run_f t) -> t_dynamic
+			| TAbstract({ a_path = ([], "Null") }, [t]) ->
+				(match follow t with
+					| TInst( { cl_kind = KTypeParameter _ }, []) ->
+							t_dynamic
+							(* real_type t *)
+					| _ -> real_type t
+				)
 			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
 				real_type (Abstract.get_underlying_type a pl)
 			| TInst( { cl_path = (["haxe"], "Int32") }, [] ) -> gen.gcon.basic.tint
@@ -933,14 +941,6 @@ let configure gen =
 			| TInst(c,params) when Meta.has Meta.Enum c.cl_meta ->
 				TInst(c, List.map (fun _ -> t_dynamic) params)
 			| TInst _ -> t
-			| TAbstract({ a_path = ([], "Null") }, [t]) when is_java_basic_type (gen.gfollow#run_f t) -> t_dynamic
-			| TAbstract({ a_path = ([], "Null") }, [t]) ->
-				(match follow t with
-					| TInst( { cl_kind = KTypeParameter _ }, []) ->
-							t_dynamic
-							(* real_type t *)
-					| _ -> real_type t
-				)
 			| TType _ | TAbstract _ -> t
 			| TAnon (anon) -> (match !(anon.a_status) with
 				| Statics _ | EnumStatics _ | AbstractStatics _ -> t
