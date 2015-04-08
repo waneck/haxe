@@ -1398,6 +1398,10 @@ let rec type_eq param a b =
 	| TAbstract (a1,tl1) , TAbstract (a2,tl2) ->
 		if a1 != a2 && not (param = EqCoreType && a1.a_path = a2.a_path) then error [cannot_unify a b];
 		List.iter2 (type_eq param) tl1 tl2
+	| TAbstract ({a_path=[],"Null"},[t]),_ ->
+		type_eq param t b
+	| _,TAbstract ({a_path=[],"Null"},[t]) ->
+		type_eq param a t
 	| TAnon a1, TAnon a2 ->
 		(try
 			PMap.iter (fun n f1 ->

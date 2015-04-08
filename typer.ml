@@ -4971,23 +4971,15 @@ let rec create com =
 			| "Float" -> ctx.t.tfloat <- TAbstract (a,[]);
 			| "Int" -> ctx.t.tint <- TAbstract (a,[])
 			| "Bool" -> ctx.t.tbool <- TAbstract (a,[])
-			| "Null" -> ctx.t.tnull <- (fun t -> TAbstract(a,[t]))
-			| _ -> ());
-		| TEnumDecl e ->
-			()
-		| TClassDecl c ->
-			()
-		| TTypeDecl td ->
-			(match snd td.t_path with
 			| "Null" ->
 				let mk_null t =
 					try
-						if not (is_null ~no_lazy:true t) then TType (td,[t]) else t
+						if not (is_null ~no_lazy:true t) then TAbstract (a,[t]) else t
 					with Exit ->
 						(* don't force lazy evaluation *)
 						let r = ref (fun() -> assert false) in
 						r := (fun() ->
-							let t = (if not (is_null t) then TType (td,[t]) else t) in
+							let t = (if not (is_null t) then TAbstract (a,[t]) else t) in
 							r := (fun() -> t);
 							t
 						);
@@ -4995,6 +4987,12 @@ let rec create com =
 				in
 				ctx.t.tnull <- mk_null;
 			| _ -> ());
+		| TEnumDecl e ->
+			()
+		| TClassDecl c ->
+			()
+		| TTypeDecl td ->
+			()
 	) ctx.g.std.m_types;
 	let m = Typeload.load_module ctx ([],"String") null_pos in
 	(match m.m_types with
