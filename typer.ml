@@ -177,6 +177,8 @@ let rec is_pos_infos = function
 		true
 	| TType (t,tl) ->
 		is_pos_infos (apply_params t.t_params tl t.t_type)
+	| TAbstract({a_path=[],"Null"},[t]) ->
+		is_pos_infos t
 	| _ ->
 		false
 
@@ -4969,6 +4971,7 @@ let rec create com =
 			| "Float" -> ctx.t.tfloat <- TAbstract (a,[]);
 			| "Int" -> ctx.t.tint <- TAbstract (a,[])
 			| "Bool" -> ctx.t.tbool <- TAbstract (a,[])
+			| "Null" -> ctx.t.tnull <- (fun t -> TAbstract(a,[t]))
 			| _ -> ());
 		| TEnumDecl e ->
 			()

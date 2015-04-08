@@ -153,7 +153,7 @@ class RecordMacros {
 					return c;
 				csup = csup.t.get().superClass;
 			}
-		case TType(t, p):
+		case TAbstract(t, p):
 			var name = t.toString();
 			if( p.length == 1 && (name == "Null" || name == "sys.db.SNull") ) {
 				isNull = true;
@@ -201,6 +201,7 @@ class RecordMacros {
 			case "Int": DInt;
 			case "Float": DFloat;
 			case "Bool": DBool;
+			case "Null": isNull = true; return makeType(p[0]);
 			case _ if (!a.get().meta.has(':coreType')):
 				var a = a.get();
 #if macro

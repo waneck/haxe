@@ -301,7 +301,7 @@ let rec is_value_type = function
 let rec matches_null ctx t = match t with
 	| TMono r ->
 		(match !r with None -> r := Some (ctx.t.tnull (mk_mono())); true | Some t -> matches_null ctx t)
-	| TType ({ t_path = ([],"Null") },[_]) ->
+	| TAbstract ({ a_path = ([],"Null") },[_]) ->
 		true
 	| TLazy f ->
 		matches_null ctx (!f())
