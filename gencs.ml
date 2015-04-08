@@ -144,7 +144,7 @@ let is_pointer gen t =
 let rec is_null t =
 	match t with
 		| TInst( { cl_path = (["haxe"; "lang"], "Null") }, _ )
-		| TType( { t_path = ([], "Null") }, _ ) -> true
+		| TAbstract( { a_path = ([], "Null") }, _ ) -> true
 		| TType( t, tl ) -> is_null (apply_params t.t_params tl t.t_type)
 		| TMono r ->
 			(match !r with
@@ -829,8 +829,8 @@ let configure gen =
 			| TAbstract ({ a_path = ["cs"],"Out" },_)
 			| TType ({ t_path = [],"Single" },[])
 			| TAbstract ({ a_path = [],"Single" },[]) -> Some t
-			| TType (({ t_path = [],"Null" } as tdef),[t2]) ->
-					Some (TType(tdef,[follow (gen.gfollow#run_f t2)]))
+			| TAbstract (({ a_path = [],"Null" } as tdef),[t2]) ->
+					Some (TAbstract(tdef,[follow (gen.gfollow#run_f t2)]))
 			| TAbstract({ a_path = ["cs"],"PointerAccess" },[t]) ->
 					Some (TAbstract(ptr,[t]))
 			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
@@ -896,7 +896,7 @@ let configure gen =
 			| TInst(cl, params) when Meta.has Meta.Enum cl.cl_meta ->
 				TInst(cl, List.map (fun _ -> t_dynamic) params)
 			| TInst(cl, params) -> TInst(cl, change_param_type (TClassDecl cl) params)
-			| TType({ t_path = ([], "Null") }, [t]) ->
+			| TAbstract({ a_path = ([], "Null") }, [t]) ->
 				(*
 					Null<> handling is a little tricky.
 					It will only change to haxe.lang.Null<> when the actual type is non-nullable or a type parameter
@@ -2959,7 +2959,7 @@ let configure gen =
 	in
 
 	let may_nullable t = match gen.gfollow#run_f t with
-		| TType({ t_path = ([], "Null") }, [t]) ->
+		| TAbstract({ a_path = ([], "Null") }, [t]) ->
 			(match follow t with
 				| TInst({ cl_path = ([], "String") }, [])
 				| TAbstract ({ a_path = ([], "Float") },[])
