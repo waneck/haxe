@@ -957,6 +957,10 @@ let configure gen =
 		in
 		if is_hxgeneric && (erase_generics || List.exists (fun t -> match follow t with | TDynamic _ -> true | _ -> false) tl) then
 			List.map (fun _ -> t_dynamic) tl
+		else if Common.defined gen.gcon Define.KeepGenerics then
+			List.map (fun t -> match real_type t with
+				| TInst( { cl_path = (["haxe";"lang"], "Null") }, _ ) -> dynamic_anon
+				| _ -> t) tl
 		else
 			List.map ret tl
 	in

@@ -202,6 +202,7 @@ module Define = struct
 		| JsClassic
 		| JsEs5
 		| JsUnflatten
+		| KeepGenerics
 		| KeepOldOutput
 		| LoopUnrollMaxCost
 		| Macro
@@ -285,6 +286,7 @@ module Define = struct
 		| JsClassic -> ("js_classic","Don't use a function wrapper and strict mode in JS output")
 		| JsEs5 -> ("js_es5","Generate JS for ES5-compliant runtimes")
 		| JsUnflatten -> ("js_unflatten","Generate nested objects for packages and types")
+		| KeepGenerics -> ("keep_generics","Generates a fully typed C# code with regards to generics")
 		| KeepOldOutput -> ("keep_old_output","Keep old source files in the output directory (for C#/Java)")
 		| LoopUnrollMaxCost -> ("loop_unroll_max_cost","Maximum cost (number of expressions * iterations) before loop unrolling is canceled (default 250)")
 		| Macro -> ("macro","Defined when code is compiled in the macro context")
