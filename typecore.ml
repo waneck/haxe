@@ -87,6 +87,7 @@ and typer_module = {
 	mutable module_using : tclass list;
 	mutable module_globals : (string, (module_type * string)) PMap.t;
 	mutable wildcard_packages : string list list;
+	mutable module_imports : Ast.import list;
 }
 
 and typer = {
@@ -124,7 +125,7 @@ and typer = {
 }
 
 type call_error =
-	| Not_enough_arguments
+	| Not_enough_arguments of (string * bool * t) list
 	| Too_many_arguments
 	| Could_not_unify of error_msg
 	| Cannot_skip_non_nullable of string
@@ -265,7 +266,9 @@ let rec error_msg = function
 	| Call_error err -> s_call_error err
 
 and s_call_error = function
-	| Not_enough_arguments -> "Not enough arguments"
+	| Not_enough_arguments tl ->
+		let pctx = print_context() in
+		"Not enough arguments, expected " ^ (String.concat ", " (List.map (fun (n,_,t) -> n ^ ":" ^ (short_type pctx t)) tl))
 	| Too_many_arguments -> "Too many arguments"
 	| Could_not_unify err -> error_msg err
 	| Cannot_skip_non_nullable s -> "Cannot skip non-nullable argument " ^ s
