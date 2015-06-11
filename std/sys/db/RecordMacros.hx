@@ -163,6 +163,9 @@ class RecordMacros {
 					return c;
 				csup = csup.t.get().superClass;
 			}
+		case TType(t,[p]) if(t.toString() == "sys.db.SNull"):
+			isNull = true;
+			return makeRecord(p);
 		case TAbstract(t, p):
 			var name = t.toString();
 			if( p.length == 1 && (name == "Null" || name == "sys.db.SNull") ) {
