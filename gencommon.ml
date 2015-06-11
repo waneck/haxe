@@ -409,9 +409,9 @@ class ['tp, 'ret] rule_dispatcher name ignore_not_found =
 			true
 		end else false
 
-	method run_f tp = get (self#run tp)
+	method run_f tp = get (self#run None tp)
 
-	method did_run tp = is_some (self#run tp)
+	method did_run tp = is_some (self#run None tp)
 
 	method get_list =
 		let ret = ref [] in
@@ -422,7 +422,7 @@ class ['tp, 'ret] rule_dispatcher name ignore_not_found =
 
 		List.rev !ret
 
-	method run_from (priority:float) (tp:'tp) : 'ret option =
+	method run_from (debug:('ret->unit) option) (priority:float) (tp:'tp) : 'ret option =
 		let ok = ref ignore_not_found in
 		let ret = ref None in
 		indent := "\t" :: !indent;
@@ -435,7 +435,13 @@ class ['tp, 'ret] rule_dispatcher name ignore_not_found =
 						let t = if !debug_mode then Common.timer ("rule dispatcher rule: " ^ n) else fun () -> () in
 						let r = rule(tp) in
 						t();
-						if is_some r then begin ret := r; raise Exit end
+						if is_some r then begin
+							ret := r;
+							(match debug with
+								| None -> ()
+								| Some c -> c (get !ret));
+							raise Exit
+						end
 					) q
 				end
 			) keys
@@ -449,8 +455,8 @@ class ['tp, 'ret] rule_dispatcher name ignore_not_found =
 		(if not (!ok) then raise NoRulesApplied);
 		!ret
 
-	method run (tp:'tp) : 'ret option =
-		self#run_from infinity tp
+	method run debug (tp:'tp) : 'ret option =
+		self#run_from debug infinity tp
 
 end;;
 
@@ -459,9 +465,9 @@ class ['tp] rule_map_dispatcher name =
 	object(self)
 	inherit ['tp, 'tp] rule_dispatcher name true as super
 
-	method run_f tp = get (self#run tp)
+	method run_f tp = get (self#run None tp)
 
-	method run_from (priority:float) (tp:'tp) : 'ret option =
+	method run_from (debug:('ret->unit) option) (priority:float) (tp:'tp) : 'ret option =
 		let cur = ref tp in
 		(try begin
 			List.iter (fun key ->
@@ -473,7 +479,12 @@ class ['tp] rule_map_dispatcher name =
 						let t = if !debug_mode then Common.timer ("rule map dispatcher rule: " ^ n) else fun () -> () in
 						let r = rule(!cur) in
 						t();
-						if is_some r then begin cur := get r end
+						if is_some r then begin
+							cur := get r;
+							match debug with
+								| None -> ()
+								| Some c -> c !cur
+						end
 					) q
 				end
 			) keys
@@ -790,7 +801,7 @@ let new_ctx con =
 
 let init_ctx gen =
 	(* ultimately add a follow once handler as the last follow handler *)
-	let follow_f = gen.gfollow#run in
+	let follow_f = gen.gfollow#run None in
 	let follow t =
 		match t with
 		| TMono r ->
@@ -872,7 +883,7 @@ let run_filters gen =
 			match mds with
 				| [] -> acc
 				| md :: tl ->
-					let filters = [ filter#run_f ] in
+					let filters = [ fun e -> get (filter#run (if !debug_mode then Some(fun e -> trace (debug_expr e)) else None) e) ] in
 					let added_types = ref [] in
 					gen.gadd_to_module <- (fun md_type priority ->
 						gen.gtypes_list <- md_type :: gen.gtypes_list;
@@ -882,7 +893,7 @@ let run_filters gen =
 					run_filters_from gen md filters;
 
 					let added_types = List.map (fun (t,p) ->
-						run_filters_from gen t [ fun e -> get (filter#run_from p e) ];
+						run_filters_from gen t [ fun e -> get (filter#run_from (if !debug_mode then Some(fun e -> trace (debug_expr e)) else None) p e) ];
 						if Hashtbl.mem gen.gtypes (t_path t) then begin
 							let rec loop i =
 								let p = t_path t in
@@ -927,7 +938,7 @@ let run_filters gen =
 					let added_types_new = !added_types in
 					added_types := [];
 					let added_types = List.map (fun (t,p) ->
-						get (filter#run_from p t)
+						get (filter#run_from None p t)
 					) added_types_new in
 
 					loop ( added_types @ (new_hd :: processed) ) tl
