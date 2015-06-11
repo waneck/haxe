@@ -1078,8 +1078,8 @@ let convert_switch mctx st cases loop =
 	| None ->
 		dt
 	| Some dt_null ->
-		let t = match ctx.t.tnull ctx.t.tint with
-			| TType(t,_) ->TType(t,[st.st_type])
+		let t = match ctx.t.tnull st.st_type with
+			| TAbstract(a,_) -> TAbstract(a,[st.st_type])
 			| t -> t
 		in
 		let e_null = mk (TConst TNull) t p in
