@@ -666,7 +666,10 @@ let rec class_string klass suffix params remap =
       if suffix = "_obj" then
          str
       else if klass.cl_interface then
-         "id <" ^ str ^ ">"
+        if klass.cl_path = ([],"id") then
+          "id"
+        else
+           "id <" ^ str ^ ">"
       else
          str ^ " *"
    (* Normal class *)
@@ -2107,16 +2110,28 @@ and gen_expression ctx retval expression =
           output ": ";
           gen_expression ctx true first_arg;
           ctx.ctx_calling <- true;
-          List.iter2 (fun arg arg_name ->
-            output (" " ^ arg_name ^ ": ");
-            gen_expression ctx true arg) args arg_names
-      with | Invalid_argument _ -> (* not all arguments names are known *)
+          let rec loop args arg_names = match args, arg_names with
+            | args, "..." :: [] ->
+              List.iter (fun arg ->
+                output ", ";
+                gen_expression ctx true arg) args;
+            | arg :: args, arg_name :: arg_names ->
+              output (" " ^ arg_name ^ ": ");
+              gen_expression ctx true arg;
+              loop args arg_names
+            | [], [] ->
+              ()
+            | _ ->
+              raise Exit
+          in
+          loop args arg_names
+      with | Exit -> (* not all arguments names are known *)
         error (
           "The function called here with name " ^ (String.concat ":" names) ^
           " does not contain the right amount of arguments' names as required" ^
           " by the objective-c calling / naming convention:" ^
-          " expected " ^ (string_of_int (List.length arg_list)) ^
-          " and found " ^ (string_of_int (List.length arg_names)))
+          " expected " ^ (string_of_int (List.length names)) ^
+          " and found " ^ (string_of_int (List.length arg_list)))
         expression.epos);
       output " ]"
 

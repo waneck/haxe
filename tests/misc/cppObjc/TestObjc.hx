@@ -113,10 +113,16 @@ class TestObjc extends haxe.unit.TestCase
 
 		cls.release();
 	}
+
+	public function testArray()
+	{
+		var arr:NSArray<NSNumber> = NSArray.alloc();
+		arr = arr.initWithObjects(1,2,3,null);
+	}
 }
 
 @:include("./native/include/test.h")
-@:objc extern interface TestInterface
+@:objc extern interface TestInterface extends Id
 {
 	function getSelf():TestInterface;
 	function getOtherThing():Int;
@@ -128,7 +134,7 @@ class TestObjc extends haxe.unit.TestCase
 
 @:include("./native/include/test.h")
 @:sourceFile("./native/test.m")
-@:objc extern class TestClass implements TestInterface
+@:objc extern class TestClass implements TestInterface implements Id
 {
 	static function aStatic():Int;
 	static function isNull(t:TestClass):Bool;
@@ -164,39 +170,4 @@ class TestObjc extends haxe.unit.TestCase
 
 	@:plain static function some_c_call(t:TestClass):Int;
 	@:plain static function is_bigger_than_10(t:TestClass, val:Int):Bool;
-}
-
-@:forward abstract NSString(_NSString) from _NSString to _NSString
-{
-	@:from @:extern inline public static function fromString(str:String):NSString
-		return _NSString.stringWithUTF8String(str);
-
-	@:to @:extern inline public function toString():String
-		return this.UTF8String();
-}
-
-@:native("NSString") @:objc extern class _NSString
-{
-	static function stringWithUTF8String(str:cpp.CastCharStar):NSString;
-
-	function UTF8String():cpp.ConstCharStar;
-}
-
-@:forward abstract NSNumber(_NSNumber) from _NSNumber to _NSNumber
-{
-	@:from @:extern inline public static function fromInt(i:Int):NSNumber
-		return _NSNumber.numberWithInt(i);
-
-	@:to @:extern inline public function toInt():Int
-		return this.intValue();
-
-	@:to @:extern inline public function toBool():Bool
-		return this.boolValue();
-}
-
-@:native("NSNumber") @:objc extern class _NSNumber
-{
-	static function numberWithInt(i:Int):NSNumber;
-	function intValue():Int;
-	function boolValue():Bool;
 }
