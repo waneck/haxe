@@ -7,6 +7,9 @@ class TestObjc extends haxe.unit.TestCase
 		var runner = new haxe.unit.TestRunner();
 		runner.add(new TestObjc());
 		var code = runner.run() ? 0 : 1;
+
+		for (_ in 0...3)
+			cpp.vm.Gc.run(true);
 		Sys.exit(code);
 	}
 
@@ -116,8 +119,9 @@ class TestObjc extends haxe.unit.TestCase
 
 	public function testArray()
 	{
-		var arr:NSArray<NSNumber> = NSArray.alloc();
-		arr = arr.initWithObjects(1,2,3,null);
+		var arr:NSArray<NSNumber> = (NSArray.alloc() : NSArray<NSNumber>).initWithObjects(1,2,3,null);
+		assertEquals(arr.count, 3);
+		assertEquals(arr[0], 1);
 	}
 }
 

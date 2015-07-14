@@ -7,6 +7,9 @@ import haxe.extern.Rest;
 
 	@:extern inline public static function arrayWithObject<T : Id>(obj:T)
 		return __NSArray.arrayWithObject(obj);
+
+	@:arrayAccess @:extern inline public function get(idx:Int):T
+		return this.objectAtIndex(idx);
 }
 
 @:native("NSArray") @:objc extern class __NSArray<T : Id>

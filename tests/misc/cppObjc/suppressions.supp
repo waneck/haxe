@@ -1,0 +1,10 @@
+{
+	<insert_a_suppression_name_here>
+	Memcheck:Cond
+	fun:*
+}
+{
+	<insert_a_suppression_name_here>
+	Memcheck:Value8
+	fun:*
+}
