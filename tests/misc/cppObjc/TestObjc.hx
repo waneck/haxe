@@ -126,7 +126,17 @@ class TestObjc extends haxe.unit.TestCase
 		var arr:NSArray<NSNumber> = (NSArray.alloc() : NSArray<NSNumber>).initWithObjects(1,2,3,null);
 		assertEquals(arr.count, 3);
 		assertEquals(arr[0], 1);
+		assertEquals(arr[1], 2);
+		assertEquals(arr[2], 3);
+		arr.release();
 
+		var arr = NSArray.fromArrayCopy([TestClass.alloc().init(), TestClass.alloc().init()]);
+		assertEquals(arr.count,2);
+		arr[0].setOtherThing(1000);
+		assertEquals(arr[0].getOtherThing(), 1000);
+		assertEquals(arr[1].getOtherThing(), 0);
+
+		for (v in arr) v.release(); // need to release because we've used alloc().init()
 		arr.release();
 	}
 }
