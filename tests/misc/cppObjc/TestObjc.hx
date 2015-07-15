@@ -139,6 +139,16 @@ class TestObjc extends haxe.unit.TestCase
 		for (v in arr) v.release(); // need to release because we've used alloc().init()
 		arr.release();
 	}
+
+	public function testC()
+	{
+		cls = TestClass.alloc().init();
+		cls.setOtherThing(1);
+		this.assertEquals(11, TestClass.some_c_call(cls));
+		this.assertTrue(TestClass.is_bigger_than_10(cls, 11));
+		this.assertFalse(TestClass.is_bigger_than_10(cls, 2));
+		cls.release();
+	}
 }
 
 @:include("./native/include/test.h")
@@ -188,6 +198,20 @@ class TestObjc extends haxe.unit.TestCase
 	@:deprecated('This method is not implemented on this class')
 	@:noCompletion @:optional function unimplementedOptional():NSString;
 
-	@:plain static function some_c_call(t:TestClass):Int;
-	@:plain static function is_bigger_than_10(t:TestClass, val:Int):Bool;
+	@:extern inline public static function some_c_call(t:TestClass):Int
+		return TestClass_C.some_c_call(t);
+
+	@:extern inline public static function is_bigger_than_10(t:TestClass, val:Int):Bool
+		return TestClass_C.is_bigger_than_10(t,val);
 }
+
+/**
+	We need another class defintion for c externs so they aren't seen as an objective-c class
+ **/
+@:include("./native/include/test.h")
+extern class TestClass_C
+{
+	@:native('::some_c_call') static function some_c_call(t:TestClass):Int;
+	@:native('::is_bigger_than_10') static function is_bigger_than_10(t:TestClass, val:Int):Bool;
+}
+

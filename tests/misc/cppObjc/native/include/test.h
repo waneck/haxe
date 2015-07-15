@@ -2,6 +2,10 @@
 #define TEST_H_INCLUDED
 #import <Foundation/Foundation.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 @protocol TestInterface
 
 - (id <TestInterface>)getSelf;
@@ -56,4 +60,8 @@
 int some_c_call(TestClass *t);
 
 BOOL is_bigger_than_10(TestClass *t, int val);
+
+#ifdef __cplusplus
+}
+#endif
 #endif
