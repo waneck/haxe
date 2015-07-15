@@ -12,7 +12,7 @@ import haxe.extern.Rest;
 		return this.objectAtIndex(idx);
 }
 
-@:native("NSArray") @:objc extern class __NSArray<T : Id>
+@:native("NSArray") @:objc extern class __NSArray<T : Id> extends NSObject
 {
 	static function alloc<T : Id>():NSArray<T>;
 	static function arrayWithObject<T : Id>(obj:T):NSArray<T>;

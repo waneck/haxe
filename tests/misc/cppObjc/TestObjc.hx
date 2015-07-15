@@ -2,14 +2,16 @@ class TestObjc extends haxe.unit.TestCase
 {
 	static function main()
 	{
-		var x:TestObjc = null;
-		var c:TestClass = null;
 		var runner = new haxe.unit.TestRunner();
 		runner.add(new TestObjc());
 		var code = runner.run() ? 0 : 1;
 
-		for (_ in 0...3)
+		for (_ in 0...2) // run twice to make sure all finalizers are called
 			cpp.vm.Gc.run(true);
+
+		var hasLeaks = Sys.command('leaks',['TestObjc' #if debug + '-debug' #end]);
+		if (hasLeaks != 0)
+			code = hasLeaks;
 		Sys.exit(code);
 	}
 
@@ -87,7 +89,9 @@ class TestObjc extends haxe.unit.TestCase
 	public function testNull()
 	{
 		this.assertTrue(TestClass.isNull(null));
-		this.assertFalse(TestClass.isNull(TestClass.alloc().init()));
+		var cls = TestClass.alloc().init();
+		this.assertFalse(TestClass.isNull(cls));
+		cls.release();
 	}
 
 	public function testInterface()
@@ -122,6 +126,8 @@ class TestObjc extends haxe.unit.TestCase
 		var arr:NSArray<NSNumber> = (NSArray.alloc() : NSArray<NSNumber>).initWithObjects(1,2,3,null);
 		assertEquals(arr.count, 3);
 		assertEquals(arr[0], 1);
+
+		arr.release();
 	}
 }
 
