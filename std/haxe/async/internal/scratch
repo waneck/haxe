@@ -1,0 +1,90 @@
+
+var channel = new Channel();
+somenodeobj.somecall(1,2,3, /* I need to pass the callback here :( */ function(err,x,y) channel.put({ x:x, y:y }));
+
+//or
+
+var myx = null, myy = null;
+somenodeobj.somecall(1,2,3, function(err,x,y) { myx = x; myy = y; if(err) /* how to throw this? */ self.handleError(err); self.awake(); });
+
+var value = @await somenodeobj.getfuture();
+
+oooor
+somenodeobj.somecall.$task(1,2,3); // Task<{ 
+
+
+function requestOkText(url)
+{
+	var request = new XMLHtppRequest();
+	var def = new Deferred();
+
+	request.open("GET", url, true);
+	request.onload = function() {
+		if (request.status == 200)
+			def.add(request.responseText);
+		else
+			def.error(new Error("Status code was " + request.status)); //this will be delivered to all listeners?
+	}
+	request.onerror = function(err) {
+		def.error(new Error(err));
+	}
+
+	return def.asTask();
+}
+
+//conceitos:
+
+channel : apenas um canal; não tem erro
+stream : várias mensagens até erro / fim -> como representar?
+task : uma mensagem ou erro
+
+var obs = somenodeobj.observable(SomeEvent);
+
+obs.
+
+a parte estranha é ter channels, tasks e streams e todos eles serem pausáveis de alguma forma:
+
+var x = @await channel;
+var y = @await stream;
+var z = @await task;
+
+for (val in @await stream)
+{
+}
+
+um channel é uma stream que pode ser escrito também?
+hmmmmmmmmm
+isso simplifica
+
+mas tem um problema: um stream não (deveria?) poder ter mais de um listener?
+onde entra o Scheduler aqui?
+class Channel<T> extends Stream<T>
+{
+	// como 
+}
+
+interface awaitable<T>
+{
+	function addTask(Task<Dynamic>)
+}
+
+class Task<Input,Output>
+{
+}
+
+class AllTasksHaveDynamicInput<Output> extends Task<Dynamic,Output>
+// pq ele pode ouvir a muitas diferentes
+
+interface Signaler<Output>
+{
+	public function 
+}
+
+// quem devia juntar os dois é o Scheduler
+seria assim:
+
+- quero um valor;
+- tento pegar sincronamente
+- se não tiver, voltar pro scheduler
+- quando tiver o valor, <<<<<<<<<<<<<<<<<<<<<<<<<< che fare?
+  - o channel teria que acordar o scheduler (OBSERVER) OU poll? OU channel sabe quem está esperando por ele?
