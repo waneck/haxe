@@ -88,3 +88,13 @@ seria assim:
 - se não tiver, voltar pro scheduler
 - quando tiver o valor, <<<<<<<<<<<<<<<<<<<<<<<<<< che fare?
   - o channel teria que acordar o scheduler (OBSERVER) OU poll? OU channel sabe quem está esperando por ele?
+
+@park @unpark
+
+
+class MultiOwnerTask<T>
+
+quando é que a gente usaria uma multi-owner?
+
+- implementar channels
+- implementar eventos (isso podia ser implementado em cima de channels)
