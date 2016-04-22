@@ -43,6 +43,10 @@ extern class Pointer<T> extends ConstPointer<T> implements ArrayAccess<T>
 
    public static function fromPointer<T>(inNativePointer:Dynamic) : Pointer<T>;
 
+   public static function fromIntPtr(intptr:IntPtr) : Pointer<cpp.Void>;
+
+   public static function fromUIntPtr(uintptr:UIntPtr) : Pointer<cpp.Void>;
+
    public static function addressOf<T>(inVariable:T) : Pointer<T>;
 
    public static function arrayElem<T>(array:Array<T>, inElem:Int):Pointer<T>;
@@ -58,7 +62,6 @@ extern class Pointer<T> extends ConstPointer<T> implements ArrayAccess<T>
 
    inline public function toUnmanagedVector(elementCount:Int) : haxe.ds.Vector<T>
       return cast toUnmanagedArray(elementCount);
- 
 
    override public function inc():Pointer<T>;
    override public function dec():Pointer<T>;

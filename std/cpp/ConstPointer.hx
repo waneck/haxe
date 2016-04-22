@@ -69,5 +69,7 @@ extern class ConstPointer<T>
    public function incBy(inT:Int):ConstPointer<T>;
    public function add(inT:Int):ConstPointer<T>;
 
+   public function toIntPtr():IntPtr;
+   public function toUIntPtr():UIntPtr;
 }
 

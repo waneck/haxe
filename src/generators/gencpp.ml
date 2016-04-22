@@ -66,6 +66,7 @@ let is_internal_class = function
    |  (["cpp"],"Int16") | (["cpp"],"UInt16")
    |  (["cpp"],"Int32") | (["cpp"],"UInt32")
    |  (["cpp"],"Int64") | (["cpp"],"UInt64")
+   |  (["cpp"],"IntPtr") | (["cpp"],"UIntPtr")
    |  (["cpp"],"Float32") | (["cpp"],"Float64") -> true
    | _ -> false;;
 
@@ -518,6 +519,7 @@ let is_numeric = function
    | "::cpp::UInt16" | "::cpp::Int16"
    | "::cpp::UInt32" | "::cpp::Int32"
    | "::cpp::UInt64" | "::cpp::Int64"
+   | "::cpp::UIntPtr" | "::cpp::IntPtr"
    | "::cpp::Float32" | "::cpp::Float64"
    | "int" | "bool" | "double" | "float" -> true
    | _ -> false
@@ -643,7 +645,7 @@ let is_native_gen_module = function
    | TClassDecl class_def -> is_native_gen_class class_def
    | _ -> false
 ;;
-  
+
 
 
 (*  Get a string to represent a type.
@@ -1656,7 +1658,7 @@ let rec cpp_type_of ctx haxe_type =
       cpp_instance_type ctx klass params
 
    | TAbstract (abs,pl) when abs.a_impl <> None ->
-       cpp_type_from_path ctx abs.a_path pl (fun () -> 
+       cpp_type_from_path ctx abs.a_path pl (fun () ->
             cpp_type_of ctx (Abstract.get_underlying_type abs pl) )
 
    | TAbstract (a,params) ->
@@ -1688,10 +1690,12 @@ let rec cpp_type_of ctx haxe_type =
       | (["cpp"], "Int16"),_ -> TCppScalar("short")
       | (["cpp"], "Int32"),_ -> TCppScalar("int")
       | (["cpp"], "Int64"),_ -> TCppScalar("::cpp::Int64")
+      | (["cpp"], "IntPtr"),_ -> TCppScalar("::cpp::IntPtr")
       | (["cpp"], "UInt8"),_ -> TCppScalar("unsigned char")
       | (["cpp"], "UInt16"),_ -> TCppScalar("unsigned short")
       | (["cpp"], "UInt32"),_ -> TCppScalar("unsigned int")
       | (["cpp"], "UInt64"),_ -> TCppScalar("::cpp::UInt64")
+      | (["cpp"], "UIntPtr"),_ -> TCppScalar("::cpp::UIntPtr")
 
       | ([],"String"), [] ->
          TCppString
