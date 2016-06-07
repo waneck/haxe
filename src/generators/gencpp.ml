@@ -1912,7 +1912,7 @@ let cpp_cast_variant_type_of t = match t with
    | TCppScalarArray _
    | TCppDynamicArray
    | TCppClass
-   | TCppEnum _ 
+   | TCppEnum _
    | TCppInst _ -> t
    | _ -> cpp_variant_type_of t;
 ;;
@@ -3303,7 +3303,7 @@ let gen_cpp_ast_expression_tree ctx class_name func_name function_args injection
          | TCppClass
          | TCppEnum _
          | TCppInst _ -> out (".StaticCast< " ^ (tcpp_to_string valueType ) ^ " >()")
-         | _ ->() 
+         | _ ->()
          )
 
       | CppIntSwitch(condition, cases, defVal) ->
@@ -3680,7 +3680,7 @@ let all_virtual_functions clazz =
 let rec unreflective_type t =
     match follow t with
        | TInst (klass,_) ->  Meta.has Meta.Unreflective klass.cl_meta
-       | TFun (args,ret) -> 
+       | TFun (args,ret) ->
            List.fold_left (fun result (_,_,t) -> result || (unreflective_type t)) (unreflective_type ret) args;
        | _ -> false
 ;;
@@ -3709,7 +3709,7 @@ let native_field_name_remap is_static field =
    if not is_static then
       remap_name
    else begin
-      let nativeImpl = get_meta_string field.cf_meta Meta.Native in 
+      let nativeImpl = get_meta_string field.cf_meta Meta.Native in
       if nativeImpl<>"" then begin
          let r = Str.regexp "^[a-zA-Z_0-9]+$" in
             if Str.string_match r remap_name 0 then
@@ -3742,7 +3742,7 @@ let gen_field ctx class_def class_name ptr_name dot_name is_static is_interface 
 
       if (not (is_dynamic_haxe_method field)) then begin
          (* The actual function definition *)
-         let nativeImpl = get_meta_string field.cf_meta Meta.Native in 
+         let nativeImpl = get_meta_string field.cf_meta Meta.Native in
          let remap_name = native_field_name_remap is_static field in
          output (if is_void then "void" else return_type );
          output (" " ^ class_name ^ "::" ^ remap_name ^ "(" );
@@ -5455,7 +5455,7 @@ let generate_class_files baseCtx super_deps constructor_deps class_def inScripta
       output_cpp ("#ifdef HXCPP_SCRIPTABLE\n\t__mClass->mMemberStorageInfo = " ^ class_name ^ "_sMemberStorageInfo;\n#endif\n");
       output_cpp ("#ifdef HXCPP_SCRIPTABLE\n\t__mClass->mStaticStorageInfo = " ^ class_name ^ "_sStaticStorageInfo;\n#endif\n");
       output_cpp ("\thx::_hx_RegisterClass(__mClass->mName, __mClass);\n");
-      if (scriptable) then
+      if (scriptable && not (Meta.has Meta.Replaceable class_def.cl_meta)) then
          output_cpp ("  HX_SCRIPTABLE_REGISTER_CLASS(\""^class_name_text^"\"," ^ class_name ^ ");\n");
       Hashtbl.iter (fun _ intf_def ->
           output_cpp ("\tHX_REGISTER_VTABLE_OFFSET( " ^ class_name ^ "," ^ (join_class_path_remap intf_def.cl_path "::")^ ");\n");
@@ -5475,7 +5475,7 @@ let generate_class_files baseCtx super_deps constructor_deps class_def inScripta
       output_cpp ("\t__mClass->mCanCast = hx::TIsInterface< (int)" ^ (cpp_class_hash class_def)  ^ " >;\n");
       output_cpp ("#ifdef HXCPP_VISIT_ALLOCS\n\t__mClass->mVisitFunc = " ^ class_name ^ "_sVisitStatics;\n#endif\n");
       output_cpp ("\thx::_hx_RegisterClass(__mClass->mName, __mClass);\n");
-      if (scriptable) then
+      if (scriptable && not (Meta.has Meta.Replaceable class_def.cl_meta)) then
          output_cpp ("  HX_SCRIPTABLE_REGISTER_INTERFACE(\""^class_name_text^"\"," ^ class_name ^ ");\n");
       output_cpp ("}\n\n");
    end;

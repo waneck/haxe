@@ -152,6 +152,7 @@ module Meta = struct
 		| ReadOnly
 		| RealPath
 		| Remove
+		| Replaceable
 		| Require
 		| RequiresAssign
 		| Resolve

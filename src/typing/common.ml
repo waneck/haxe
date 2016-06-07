@@ -553,6 +553,7 @@ module MetaInfo = struct
 		| ReadOnly -> ":readOnly",("Generates a field with the 'readonly' native keyword",[Platform Cs; UsedOn TClassField])
 		| RealPath -> ":realPath",("Internally used on @:native types to retain original path information",[Internal])
 		| Remove -> ":remove",("Causes an interface to be removed from all implementing classes before generation",[UsedOn TClass])
+		| Replaceable -> ":replaceable",("Allows a statically compiled type to be replaced by a cppia definition",[UsedOn TClass;Platform Cpp])
 		| Require -> ":require",("Allows access to a field only if the specified compiler flag is set",[HasParam "Compiler flag to check";UsedOn TClassField])
 		| RequiresAssign -> ":requiresAssign",("Used internally to mark certain abstract operator overloads",[Internal])
 		| Resolve -> ":resolve",("Abstract fields marked with this metadata can be used to resolve unknown fields",[UsedOn TClassField])
