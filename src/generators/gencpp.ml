@@ -1912,7 +1912,7 @@ let cpp_cast_variant_type_of t = match t with
    | TCppScalarArray _
    | TCppDynamicArray
    | TCppClass
-   | TCppEnum _ 
+   | TCppEnum _
    | TCppInst _ -> t
    | _ -> cpp_variant_type_of t;
 ;;
@@ -2840,6 +2840,15 @@ let gen_type ctx haxe_type =
    ctx.ctx_output (ctx_type_string ctx haxe_type)
 ;;
 
+let get_class_of_expr ctx path native =
+   let path = "::" ^ (join_class_path_remap (path) "::" ) in
+   if (native) then
+      "null()"
+   else if (path="::Array") then
+      "hx::ArrayBase::__mClass"
+   else
+      ("hx::ClassOf< " ^ path ^ " >()")
+;;
 
 let gen_cpp_ast_expression_tree ctx class_name func_name function_args injection tree =
    let writer = ctx.ctx_writer in
@@ -3163,13 +3172,7 @@ let gen_cpp_ast_expression_tree ctx class_name func_name function_args injection
          out ("hx::SourceInfo(" ^ strq name ^ "," ^ string_of_int(Int32.to_int line) ^ "," ^ strq clazz ^ "," ^ strq func ^ ")")
 
       | CppClassOf (path,native) ->
-         let path = "::" ^ (join_class_path_remap (path) "::" ) in
-         if (native) then
-            out "null()"
-         else if (path="::Array") then
-            out "hx::ArrayBase::__mClass"
-         else
-            out ("hx::ClassOf< " ^ path ^ " >()")
+         out (get_class_of_expr ctx path native)
 
       | CppVar(loc) ->
          gen_val_loc loc;
@@ -3303,7 +3306,7 @@ let gen_cpp_ast_expression_tree ctx class_name func_name function_args injection
          | TCppClass
          | TCppEnum _
          | TCppInst _ -> out (".StaticCast< " ^ (tcpp_to_string valueType ) ^ " >()")
-         | _ ->() 
+         | _ ->()
          )
 
       | CppIntSwitch(condition, cases, defVal) ->
@@ -3598,6 +3601,36 @@ let gen_cpp_ast_expression_tree ctx class_name func_name function_args injection
 
 (* } *)
 
+type prelude_type =
+  | PFunction of string * tfunc
+  | PNew of string list
+
+let gen_cpp_static_scriptable_prelude ctx output clazz prelude_type =
+   match is_native_gen_module (TClassDecl clazz) with
+   | false ->
+      output ("#ifdef HXCPP_SCRIPTABLE_REPLACE\n\t");
+      let class_of = get_class_of_expr ctx clazz.cl_path false in
+      output ("if (" ^ class_of ^ "->IsScript()) {\n\t\t");
+      (match prelude_type with
+      | PFunction(func_name, function_def) ->
+         let is_void = (cpp_type_of ctx function_def.tf_type ) = TCppVoid in
+         if not is_void then output "return ";
+         output ("::Dynamic(" ^ class_of ^ "->__Field(" ^ (str func_name) ^ ",hx::paccDynamic))(" );
+         output (String.concat ", " (List.map (fun (v,_) -> cpp_var_name_of v) function_def.tf_args));
+         output ");";
+         if is_void then output " return;";
+      | PNew(constructor_var_list) ->
+         output ("return " ^ class_of ^ "->ConstructArgs(::cpp::VirtualArray_obj::__new(");
+         output (string_of_int (List.length constructor_var_list) ^")");
+         List.iteri (fun i v ->
+           output ("->init(" ^ string_of_int i ^ ", ::Dynamic(" ^ v ^ ") )")
+         ) constructor_var_list;
+         output ");"
+      );
+      output "\n\t}\n";
+      output "#endif\n"
+   | true -> ()
+;;
 
 let gen_cpp_function_body ctx clazz is_static func_name function_def head_code tail_code =
    let output = ctx.ctx_output in
@@ -3615,6 +3648,8 @@ let gen_cpp_function_body ctx clazz is_static func_name function_def head_code t
       end;
       if (head_code<>"") then
          output_i (head_code ^ "\n");
+      let scriptable = Common.defined ctx.ctx_common Define.Scriptable in
+      if is_static && scriptable then gen_cpp_static_scriptable_prelude ctx ctx.ctx_output clazz (PFunction(func_name, function_def));
    in
    let args = List.map fst function_def.tf_args in
 
@@ -3680,7 +3715,7 @@ let all_virtual_functions clazz =
 let rec unreflective_type t =
     match follow t with
        | TInst (klass,_) ->  Meta.has Meta.Unreflective klass.cl_meta
-       | TFun (args,ret) -> 
+       | TFun (args,ret) ->
            List.fold_left (fun result (_,_,t) -> result || (unreflective_type t)) (unreflective_type ret) args;
        | _ -> false
 ;;
@@ -3709,7 +3744,7 @@ let native_field_name_remap is_static field =
    if not is_static then
       remap_name
    else begin
-      let nativeImpl = get_meta_string field.cf_meta Meta.Native in 
+      let nativeImpl = get_meta_string field.cf_meta Meta.Native in
       if nativeImpl<>"" then begin
          let r = Str.regexp "^[a-zA-Z_0-9]+$" in
             if Str.string_match r remap_name 0 then
@@ -3742,7 +3777,7 @@ let gen_field ctx class_def class_name ptr_name dot_name is_static is_interface 
 
       if (not (is_dynamic_haxe_method field)) then begin
          (* The actual function definition *)
-         let nativeImpl = get_meta_string field.cf_meta Meta.Native in 
+         let nativeImpl = get_meta_string field.cf_meta Meta.Native in
          let remap_name = native_field_name_remap is_static field in
          output (if is_void then "void" else return_type );
          output (" " ^ class_name ^ "::" ^ remap_name ^ "(" );
@@ -4920,13 +4955,17 @@ let generate_class_files baseCtx super_deps constructor_deps class_def inScripta
       output_cpp (ptr_name ^ " " ^ class_name ^ "::__new(" ^constructor_type_args ^")\n");
 
       let create_result () =
-         output_cpp ("{\n\t" ^ ptr_name ^ " _hx_result = new " ^ class_name ^ "();\n");
+         output_cpp (ptr_name ^ " _hx_result = new " ^ class_name ^ "();\n");
          in
+      output_cpp "{\n";
+      if scriptable then gen_cpp_static_scriptable_prelude ctx output_cpp class_def (PNew(constructor_var_list));
+      output_cpp "\t";
       create_result ();
       output_cpp ("\t_hx_result->__construct(" ^ constructor_args ^ ");\n");
       output_cpp ("\treturn _hx_result;\n}\n\n");
 
       output_cpp ("Dynamic " ^ class_name ^ "::__Create(hx::DynamicArray inArgs)\n");
+      output_cpp "{\n\t";
       create_result ();
       output_cpp ("\t_hx_result->__construct(" ^ (array_arg_list constructor_var_list) ^ ");\n");
       output_cpp ("\treturn _hx_result;\n}\n\n");
@@ -5451,6 +5490,7 @@ let generate_class_files baseCtx super_deps constructor_deps class_def inScripta
       output_cpp ("\t__mClass->mStatics = hx::Class_obj::dupFunctions(" ^ sStaticFields ^ ");\n");
       output_cpp ("\t__mClass->mMembers = hx::Class_obj::dupFunctions(" ^ sMemberFields ^ ");\n");
       output_cpp ("\t__mClass->mCanCast = hx::TCanCast< " ^ class_name ^ " >;\n");
+      output_cpp ("#ifdef HXCPP_SCRIPTABLE_REPLACE\n\t__mClass->mReference = &__mClass;\n#endif\n");
       output_cpp ("#ifdef HXCPP_VISIT_ALLOCS\n\t__mClass->mVisitFunc = " ^ class_name ^ "_sVisitStatics;\n#endif\n");
       output_cpp ("#ifdef HXCPP_SCRIPTABLE\n\t__mClass->mMemberStorageInfo = " ^ class_name ^ "_sMemberStorageInfo;\n#endif\n");
       output_cpp ("#ifdef HXCPP_SCRIPTABLE\n\t__mClass->mStaticStorageInfo = " ^ class_name ^ "_sStaticStorageInfo;\n#endif\n");

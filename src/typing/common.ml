@@ -293,6 +293,7 @@ module Define = struct
 		| RealPosition
 		| ReplaceFiles
 		| Scriptable
+		| ScriptableReplace
 		| ShallowExpose
 		| SourceHeader
 		| SourceMapContent
@@ -385,7 +386,8 @@ module Define = struct
 		| PhpPrefix -> ("php_prefix","Compiled with --php-prefix")
 		| RealPosition -> ("real_position","Disables Haxe source mapping when targetting C#, removes position comments in Java output")
 		| ReplaceFiles -> ("replace_files","GenCommon internal")
-		| Scriptable -> ("scriptable","GenCPP internal")
+		| Scriptable -> ("scriptable","Allow the hxcpp compiled classes to be used by cppia")
+		| ScriptableReplace -> ("scriptable_replace","Allow any hxcpp compiled class to be replaced by its cppia implementation")
 		| ShallowExpose -> ("shallow-expose","Expose types to surrounding scope of Haxe generated closure without writing to window object")
 		| SourceHeader -> ("source-header","Print value as comment on top of generated files, use '' value to disable")
 		| SourceMapContent -> ("source-map-content","Include the hx sources as part of the JS source map")

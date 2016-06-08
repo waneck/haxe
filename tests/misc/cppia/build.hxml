@@ -1,0 +1,10 @@
+-main TestCppia
+-cpp bin
+-debug
+-D scriptable
+-D scriptableReplace
+-dce no
+--next
+-cppia bin/cppia.cppia
+Test
+Test2
