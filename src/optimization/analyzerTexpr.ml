@@ -381,15 +381,12 @@ module InterferenceReport = struct
 			(* state *)
 			| TCall({eexpr = TLocal v},el) when not (is_unbound_call_that_might_have_side_effects v el) ->
 				List.iter loop el
-			| TCall({eexpr = TField(_,FStatic(c,cf))},el) when is_pure c cf ->
-				set_state_read ir;
-				List.iter loop el
 			| TNew(c,_,el) when (match c.cl_constructor with Some cf when is_pure c cf -> true | _ -> false) ->
 				set_state_read ir;
 				List.iter loop el;
 			| TCall(e1,el) ->
 				set_state_read ir;
-				set_state_write ir;
+				if Optimizer.has_side_effect e then set_state_write ir;
 				loop e1;
 				List.iter loop el
 			| TNew(_,_,el) ->
@@ -497,8 +494,8 @@ module Fusion = struct
 			        can_be_used_as_value com e &&
 			        (Meta.has Meta.CompilerGenerated v.v_meta || config.optimize && config.fusion && config.user_var_fusion && v.v_extra = None)
 			in
- 			let st = s_type (print_context()) in
-			(*if e.epos.pfile = "src/Main.hx" then
+ 			(*let st = s_type (print_context()) in
+			if e.epos.pfile = "src/Main.hx" then
 				print_endline (Printf.sprintf "%s(%s) -> %s: #uses=%i && #writes=%i && used_as_value=%b && (compiler-generated=%b || optimize=%b && fusion=%b && user_var_fusion=%b && type_change_ok=%b && v_extra=%b) -> %b"
 					v.v_name (st v.v_type) (st e.etype)
 					(get_num_uses v) (get_num_writes v) (can_be_used_as_value com e)
