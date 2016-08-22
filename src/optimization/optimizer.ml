@@ -231,12 +231,17 @@ let api_inline ctx c field params p = match c.cl_path, field, params with
 	| _ ->
 		api_inline2 ctx.com c field params p
 
-let rec is_affected_type t = match follow t with
-	| TAbstract({a_path = [],("Int" | "Float" | "Bool")},_) -> true
-	| TAbstract({a_path = ["haxe"],("Int64" | "Int32")},_) -> true
-	| TAbstract(a,tl) -> is_affected_type (Abstract.get_underlying_type a tl)
-	| TDynamic _ -> true (* sadly *)
-	| _ -> false
+let is_read_only_field_access fa = match fa with
+	| FEnum _ ->
+		true
+	| FDynamic _ ->
+		false
+	| FAnon cf | FInstance (_,_,cf) | FStatic (_,cf) | FClosure (_,cf) ->
+		match cf.cf_kind with
+			| Method MethDynamic -> false
+			| Method _ -> true
+			| Var {v_write = AccNever | AccNo} -> true
+			| _ -> false
 
 let create_affection_checker () =
 	let modified_locals = Hashtbl.create 0 in
@@ -244,7 +249,7 @@ let create_affection_checker () =
 		let rec loop e = match e.eexpr with
 			| TConst _ | TFunction _ | TTypeExpr _ -> ()
 			| TLocal v when Hashtbl.mem modified_locals v.v_id -> raise Exit
-			| TField _ when is_affected_type e.etype -> raise Exit
+			| TField(_,fa) when not (is_read_only_field_access fa) -> raise Exit
 			| _ -> Type.iter loop e
 		in
 		try
@@ -254,9 +259,9 @@ let create_affection_checker () =
 			true
 	in
 	let rec collect_modified_locals e = match e.eexpr with
-		| TUnop((Increment | Decrement),_,{eexpr = TLocal v}) when is_affected_type v.v_type ->
+		| TUnop((Increment | Decrement),_,{eexpr = TLocal v}) ->
 			Hashtbl.add modified_locals v.v_id true
-		| TBinop((OpAssign | OpAssignOp _),{eexpr = TLocal v},e2) when is_affected_type v.v_type ->
+		| TBinop((OpAssign | OpAssignOp _),{eexpr = TLocal v},e2) ->
 			collect_modified_locals e2;
 			Hashtbl.add modified_locals v.v_id true
 		| _ ->
