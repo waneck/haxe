@@ -102,7 +102,9 @@ let target_handles_unops com = match com.platform with
 	| _ -> true
 
 let target_handles_assign_ops com = match com.platform with
-	| Lua -> false
+	(* Technically PHP can handle assign ops, but unfortunately x += y is not always
+	   equivalent to x = x + y in case y has side-effects. *)
+	| Lua | Php -> false
 	| _ -> true
 
 let rec can_be_used_as_value com e =
@@ -557,19 +559,27 @@ module Fusion = struct
 				end
 			| ({eexpr = TVar(v1,Some e1)} as ev) :: e2 :: el when can_be_fused v1 e1 ->
 				let found = ref false in
+				let blocked = ref false in
 				let ir = InterferenceReport.from_texpr e1 in
 				(*if e.epos.pfile = "src/Main.hx" then print_endline (Printf.sprintf "FUSION %s<%i> = %s\n\t%s\n\t%s" v1.v_name v1.v_id (s_expr_pretty e1) (s_expr_pretty e2) (InterferenceReport.to_string ir));*)
 				let rec replace e =
+					let explore e =
+						let old = !blocked in
+						blocked := true;
+						let e = replace e in
+						blocked := old;
+						e
+					in
 					if !found then e else match e.eexpr with
 						| TWhile _ | TFunction _ ->
 							e
 						| TSwitch(e1,cases,edef) ->
 							let e1 = match com.platform with
-								| Lua | Python -> e1
+								| Lua | Python -> explore e1
 								| _ -> replace e1
 							in
 							{e with eexpr = TSwitch(e1,cases,edef)}
-						| TLocal v2 when v1 == v2 ->
+						| TLocal v2 when v1 == v2 && not !blocked ->
 							found := true;
 							if type_change_ok com v1.v_type e1.etype then e1 else mk (TCast(e1,None)) v1.v_type e.epos
 						| TLocal v when has_var_write ir v ->
@@ -613,17 +623,34 @@ module Fusion = struct
 						| TNew(c,tl,el) when (match c.cl_constructor with Some cf when is_pure c cf -> true | _ -> false) ->
 							let el = List.map replace el in
 							{e with eexpr = TNew(c,tl,el)}
-						| TCall(e1,el) ->
-							let e1,el = if com.platform = Neko then begin
+						| TCall(e2,el) ->
+							let e1,el = match com.platform with
+							| Neko ->
 								(* Neko has this reversed at the moment (issue #4787) *)
 								let el = List.map replace el in
-								let e1 = replace e1 in
-								e1,el
-							end else begin
-								let e1 = replace e1 in
+								let e2 = replace e2 in
+								e2,el
+							| Php | Cpp ->
+								let e2 = match e1.eexpr with
+									(* PHP doesn't like call()() expressions. *)
+									| TCall _ when com.platform = Php -> explore e2
+									| _ -> replace e2
+								in
+								let temp_found = !found in
+								let really_found = ref !found in
+								let el = List.map (fun e ->
+									found := temp_found;
+									let e = replace e in
+									if !found then really_found := true;
+									e
+								) el in
+								found := !really_found;
+								e2,el
+							| _ ->
+								let e2 = replace e2 in
 								let el = List.map replace el in
-								e1,el
-							end in
+								e2,el
+							in
 							if not !found && (has_state_write ir || has_state_read ir || has_any_field_read ir || has_any_field_write ir) then raise Exit;
 							{e with eexpr = TCall(e1,el)}
 						| TNew(c,tl,el) ->
