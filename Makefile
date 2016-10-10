@@ -55,6 +55,7 @@ CC_PARSER_CMD = $(COMPILER) -pp camlp4o $(ALL_CFLAGS) -c src/syntax/parser.ml
 RELDIR=../../..
 
 MODULES=json version globals path context/meta syntax/ast display/displayTypes typing/type typing/error \
+	typing/object typing/objectWriter typing/objectReader \
 	syntax/lexer context/common generators/genxml \
 	syntax/parser typing/abstract typing/typecore display/display optimization/optimizerTexpr \
 	optimization/optimizer typing/overloads typing/typeload generators/codegen generators/gencommon generators/genas3 \
@@ -237,6 +238,12 @@ src/typing/typecore.$(MODULE_EXT): src/typing/abstract.$(MODULE_EXT) src/context
 src/typing/typeload.$(MODULE_EXT): src/globals.$(MODULE_EXT) src/context/meta.$(MODULE_EXT) src/globals.$(MODULE_EXT) src/optimization/optimizerTexpr.$(MODULE_EXT) src/typing/overloads.$(MODULE_EXT) src/path.$(MODULE_EXT) src/typing/typecore.$(MODULE_EXT) src/typing/type.$(MODULE_EXT) src/syntax/parser.$(MODULE_EXT) src/optimization/optimizer.$(MODULE_EXT) src/syntax/lexer.$(MODULE_EXT) src/context/common.$(MODULE_EXT) src/syntax/ast.$(MODULE_EXT) src/json.$(MODULE_EXT) src/display/display.$(MODULE_EXT)
 
 src/typing/typer.$(MODULE_EXT): src/typing/abstract.$(MODULE_EXT) src/context/meta.$(MODULE_EXT) src/globals.$(MODULE_EXT) src/typing/error.$(MODULE_EXT) src/optimization/optimizerTexpr.$(MODULE_EXT) src/typing/overloads.$(MODULE_EXT) src/path.$(MODULE_EXT) src/typing/typeload.$(MODULE_EXT) src/typing/typecore.$(MODULE_EXT) src/typing/type.$(MODULE_EXT) src/syntax/parser.$(MODULE_EXT) src/optimization/optimizer.$(MODULE_EXT) src/syntax/lexer.$(MODULE_EXT) src/macro/interp.$(MODULE_EXT) src/context/common.$(MODULE_EXT) src/generators/codegen.$(MODULE_EXT) src/syntax/ast.$(MODULE_EXT) src/optimization/filters.$(MODULE_EXT) src/generators/genjs.$(MODULE_EXT) src/display/display.$(MODULE_EXT)
+
+src/typing/object.$(MODULE_EXT): src/typing/type.$(MODULE_EXT) src/context/meta.$(MODULE_EXT) src/syntax/ast.$(MODULE_EXT)
+
+src/typing/objectReader.$(MODULE_EXT): src/typing/object.$(MODULE_EXT) src/typing/type.$(MODULE_EXT) src/context/meta.$(MODULE_EXT) src/syntax/ast.$(MODULE_EXT)
+
+src/typing/objectWriter.$(MODULE_EXT): src/typing/object.$(MODULE_EXT) src/typing/type.$(MODULE_EXT) src/context/meta.$(MODULE_EXT) src/syntax/ast.$(MODULE_EXT)
 
 # main
 
