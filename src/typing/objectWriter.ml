@@ -712,15 +712,18 @@ and write_tfield_access ctx buf = function
 		write_byte buf 1;
 		write_t ctx buf (TInst(c,tl));
 		write_string ctx buf field.cf_name;
+		write_tparams ctx buf field.cf_params;
 		write_t ctx buf field.cf_type
 	| FStatic(c,field) ->
 		write_byte buf 2;
 		write_module ctx buf (c.cl_module.m_path,snd c.cl_path);
 		write_string ctx buf field.cf_name;
+		write_tparams ctx buf field.cf_params;
 		write_t ctx buf field.cf_type
 	| FAnon(field) ->
 		write_byte buf 3;
 		write_string ctx buf field.cf_name;
+		write_tparams ctx buf field.cf_params;
 		write_t ctx buf field.cf_type
 	| FDynamic(name) ->
 		write_byte buf 4;
