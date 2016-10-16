@@ -135,7 +135,7 @@ let nstr ctx str =
 		write_string ctx.ctable str;
 		let count = ctx.tcount in
 		ctx.tcount <- count + 1;
-		Hashtbl.add ctx.constants tbl_data count;
+		Hashtbl.replace ctx.constants tbl_data count;
 		count
 
 let nmodule ctx (module_path, type_name) =
@@ -156,8 +156,11 @@ let nmodule ctx (module_path, type_name) =
 		write_ui16 ctx.ctable ntype_name;
 		let count = ctx.tcount in
 		ctx.tcount <- count + 1;
-		Hashtbl.add ctx.constants tbl_data count;
+		Hashtbl.replace ctx.constants tbl_data count;
 		count
+
+let write_module ctx buf m =
+	write_ui16 buf (nmodule ctx m)
 
 (* no null tag *)
 let write_pos ctx buf p =
@@ -219,13 +222,6 @@ let unop_code op = match op with
 	| Neg -> 4
 	| NegBits -> 5
 
-(* type type_path = { *)
-(* 	tpackage : string list; *)
-(* 	tname : string; *)
-(* 	tparams : type_param_or_const list; *)
-(* 	tsub : string option; *)
-(* } *)
-
 (* null tag: ui16 0 *)
 let write_string ctx buf s =
 	write_ui16 buf (nstr ctx s)
@@ -239,6 +235,21 @@ let write_doc ctx buf s = match s with
 let write_placed_name ctx buf (s,p) =
 	write_string ctx buf s;
 	write_pos ctx buf p
+
+(* null tag: ui8 0 *)
+let write_module_type ctx buf mt = match mt with
+	| TClassDecl c ->
+		write_byte buf 1;
+		write_module ctx buf (c.cl_module.m_path,snd c.cl_path);
+	| TEnumDecl e ->
+		write_byte buf 2;
+		write_module ctx buf (e.e_module.m_path,snd e.e_path);
+	| TTypeDecl t ->
+		write_byte buf 3;
+		write_module ctx buf (t.t_module.m_path,snd t.t_path);
+	| TAbstractDecl a ->
+		write_byte buf 4;
+		write_module ctx buf (a.a_module.m_path,snd a.a_path)
 
 (* null tag: ui8 0 (from write_complex_type) *)
 let rec write_type_hint ctx buf (ct,p) =
@@ -550,7 +561,7 @@ and write_meta ctx buf meta =
 	write_ui16 buf 0
 
 (* null tag: ui8 0 *)
-let rec write_t ctx buf t =
+let rec write_inplace_t ctx buf t =
 	let t = normalize_type t in
 	match t with
 	| TMono(ref) ->
@@ -564,7 +575,7 @@ let rec write_t ctx buf t =
 		end
 	| TEnum(e,params) ->
 		write_byte buf (Char.code 'E');
-		write_ui16 buf (nmodule ctx (e.e_module.m_path,snd e.e_path));
+		write_module ctx buf (e.e_module.m_path,snd e.e_path);
 		List.iter (fun p ->
 			write_t ctx buf p
 		) params;
@@ -588,14 +599,14 @@ let rec write_t ctx buf t =
 			write_t ctx buf (List.hd params)
 		| _ ->
 			write_byte buf (Char.code 'C');
-			write_ui16 buf (nmodule ctx (c.cl_module.m_path,snd c.cl_path));
+			write_module ctx buf (c.cl_module.m_path,snd c.cl_path);
 			List.iter (fun p ->
 				write_t ctx buf p
 			) params;
 			write_byte buf 0)
 	| TType(t,params) ->
 		write_byte buf (Char.code 'T');
-		write_ui16 buf (nmodule ctx (t.t_module.m_path, snd t.t_path));
+		write_module ctx buf (t.t_module.m_path, snd t.t_path);
 		List.iter (fun p ->
 			write_t ctx buf p
 		) params;
@@ -626,15 +637,15 @@ let rec write_t ctx buf t =
 				true
 			| Statics c ->
 				write_byte buf 5;
-				write_ui16 buf (nmodule ctx (c.cl_module.m_path, snd c.cl_path));
+				write_module ctx buf (c.cl_module.m_path, snd c.cl_path);
 				false
 			| EnumStatics e ->
 				write_byte buf 6;
-				write_ui16 buf (nmodule ctx (e.e_module.m_path, snd e.e_path));
+				write_module ctx buf (e.e_module.m_path, snd e.e_path);
 				false
 			| AbstractStatics a ->
 				write_byte buf 7;
-				write_ui16 buf (nmodule ctx (a.a_module.m_path, snd a.a_path));
+				write_module ctx buf (a.a_module.m_path, snd a.a_path);
 				false
 		in
 		if write_fields then begin
@@ -643,47 +654,267 @@ let rec write_t ctx buf t =
 		write_byte buf 0
 	| TAbstract(a,params) ->
 		write_byte buf (Char.code 'R');
-		write_ui16 buf (nmodule ctx (a.a_module.m_path, snd a.a_path));
+		write_module ctx buf (a.a_module.m_path, snd a.a_path);
 		List.iter (fun p ->
 			write_t ctx buf p
 		) params;
 		write_byte buf 0
+	| TLazy _ -> assert false
 
-(* let rec ntype ctx t = *)
-(* 	let buf = IO.output_string() in *)
-(* 	let t = normalize_type t in *)
-(* 	() *)
+(* null tag: ui8 0 *)
+and write_t ctx buf t =
+	write_ui16 buf (ntype ctx t)
 
-(* let nvar ctx tvar = *)
-(* 	try *)
-(* 		Hashtbl.find ctx.constants_tvar tvar.v_id *)
-(* 	with | Not_found -> *)
-(* 		let nname = nstr ctx tvar.v_name in *)
-(* 		let ntype =  *)
+and ntype ctx t =
+	let normalized = normalize_type t in
+	try
+		TypeHashtbl.find ctx.constants_type normalized
+	with | Not_found ->
+		let buf = IO.output_string() in
+		write_inplace_t ctx buf t;
+		IO.write_string ctx.ctable (close_out buf);
+		let count = ctx.tcount in
+		ctx.tcount <- count + 1;
+		TypeHashtbl.replace ctx.constants_type normalized count;
+		count
 
-	(* | EParenthesis of expr *)
-	(* | EObjectDecl of (placed_name * expr) list *)
-	(* | EArrayDecl of expr list *)
-	(* | ECall of expr * expr list *)
-	(* | ENew of placed_type_path * expr list *)
-	(* | EUnop of unop * unop_flag * expr *)
-	(* | EVars of (placed_name * type_hint option * expr option) list *)
-	(* | EFunction of string option * func *)
-	(* | EBlock of expr list *)
-	(* | EFor of expr * expr *)
-	(* | EIn of expr * expr *)
-	(* | EIf of expr * expr * expr option *)
-	(* | EWhile of expr * expr * while_flag *)
-	(* | ESwitch of expr * (expr list * expr option * expr option * pos) list * (expr option * pos) option *)
-	(* | ETry of expr * (placed_name * type_hint * expr * pos) list *)
-	(* | EReturn of expr option *)
-	(* | EBreak *)
-	(* | EContinue *)
-	(* | EUntyped of expr *)
-	(* | EThrow of expr *)
-	(* | ECast of expr * type_hint option *)
-	(* | EDisplay of expr * bool *)
-	(* | EDisplayNew of placed_type_path *)
-	(* | ETernary of expr * expr * expr *)
-	(* | ECheckType of expr * type_hint *)
-	(* | EMeta of metadata_entry * expr *)
+(* null tag: ui8 0 *)
+let write_tconstant ctx buf = function
+	| TInt i32 ->
+		write_byte buf 1;
+		write_real_i32 buf i32
+	| TFloat f ->
+		write_byte buf 2;
+		write_string ctx buf f
+	| TString s ->
+		write_byte buf 3;
+		write_string ctx buf s
+	| TBool b ->
+		let i = 4 in
+		let i = if b then i land 0x80 else i in
+		write_byte buf i
+	| TNull ->
+		write_byte buf 4
+	| TThis ->
+		write_byte buf 5
+	| TSuper ->
+		write_byte buf 6
+
+(* null tag: ui8 0 *)
+let rec write_texpr ctx buf e =
+	write_texpr_expr ctx buf e.eexpr;
+	write_t ctx buf e.etype;
+	write_pos ctx buf e.epos
+
+(* null tag: ui8 0 *)
+and write_tfield_access ctx buf = function
+	| FInstance(c,tl,field) ->
+		write_byte buf 1;
+		write_t ctx buf (TInst(c,tl));
+		write_string ctx buf field.cf_name;
+		write_t ctx buf field.cf_type
+	| FStatic(c,field) ->
+		write_byte buf 2;
+		write_module ctx buf (c.cl_module.m_path,snd c.cl_path);
+		write_string ctx buf field.cf_name;
+		write_t ctx buf field.cf_type
+	| FAnon(field) ->
+		write_byte buf 3;
+		write_string ctx buf field.cf_name;
+		write_t ctx buf field.cf_type
+	| FDynamic(name) ->
+		write_byte buf 4;
+		write_string ctx buf name
+	| FClosure(copt, field) ->
+		write_byte buf 5;
+		(match copt with
+		| None -> write_ui16 buf 0
+		| Some(c,tl) -> write_t ctx buf (TInst(c,tl)));
+		write_string ctx buf field.cf_name;
+		write_t ctx buf field.cf_type
+	| FEnum(e,ef) ->
+		write_byte buf 6;
+		write_module ctx buf (e.e_module.m_path,snd e.e_path);
+		write_string ctx buf ef.ef_name
+
+(* null tag: ui8 0 *)
+and write_texpr_expr ctx buf e =
+	match e with
+	| TConst c ->
+		write_byte buf 1;
+		write_tconstant ctx buf c
+	| TLocal v ->
+		write_byte buf 2;
+		write_var ctx buf v
+	| TArray(e1, e2) ->
+		write_byte buf 3;
+		write_texpr ctx buf e1;
+		write_texpr ctx buf e2
+	| TBinop(op, e1, e2) ->
+		write_byte buf 4;
+		write_byte buf (binop_code op);
+		write_texpr ctx buf e1;
+		write_texpr ctx buf e2
+	| TField(e, acc) ->
+		write_byte buf 5;
+		write_texpr ctx buf e;
+		write_tfield_access ctx buf acc
+	| TTypeExpr mt ->
+		write_byte buf 6;
+		write_module_type ctx buf mt
+	| TParenthesis e ->
+		write_byte buf 7;
+		write_texpr ctx buf e
+	| TObjectDecl (sel) ->
+		write_byte buf 8;
+		List.iter (fun (s,e) ->
+			write_string ctx buf s;
+			write_texpr ctx buf e
+		) sel;
+		write_ui16 buf 0
+	| TArrayDecl el ->
+		write_byte buf 9;
+		List.iter (write_texpr ctx buf) el;
+		write_byte buf 0
+	| TCall(e,el) ->
+		write_byte buf 10;
+		write_texpr ctx buf e;
+		List.iter (write_texpr ctx buf) el;
+		write_byte buf 0
+	| TNew (c,tl,el) ->
+		write_byte buf 11;
+		write_t ctx buf (TInst(c,tl));
+		List.iter (write_texpr ctx buf) el;
+		write_byte buf 0
+	| TUnop(unop,flag,e) ->
+		write_byte buf 12;
+		write_byte buf (unop_code unop);
+		write_byte buf (if flag = Prefix then 1 else 2);
+		write_texpr ctx buf e
+	| TFunction tf ->
+		write_byte buf 13;
+		write_tfunc ctx buf tf
+	| TVar(tvar,eopt) ->
+		write_byte buf 14;
+		write_var ctx buf tvar;
+		(match eopt with
+		| None -> write_byte buf 0
+		| Some e -> write_texpr ctx buf e)
+	| TBlock el ->
+		write_byte buf 15;
+		List.iter (write_texpr ctx buf) el;
+		write_byte buf 0
+	| TFor(tvar, e1, e2) ->
+		write_byte buf 16;
+		write_var ctx buf tvar;
+		write_texpr ctx buf e1;
+		write_texpr ctx buf e2
+	| TIf(econd, eif, eelse) ->
+		write_byte buf 17;
+		write_texpr ctx buf econd;
+		write_texpr ctx buf eif;
+		(match eelse with
+		| None -> write_byte buf 0
+		| Some e -> write_texpr ctx buf e)
+	| TWhile(econd, e1, flag) ->
+		write_byte buf 18;
+		write_texpr ctx buf econd;
+		write_texpr ctx buf e1;
+		write_byte buf (if flag = NormalWhile then 1 else 2)
+	| TSwitch(econd, matches, edef) ->
+		write_byte buf 19;
+		write_texpr ctx buf econd;
+		write_ui16 buf (List.length matches);
+		List.iter (fun (el, e) ->
+			List.iter (write_texpr ctx buf) el;
+			write_byte buf 0;
+			write_texpr ctx buf e
+		) matches;
+		(match edef with
+		| None -> write_byte buf 0
+		| Some e -> write_texpr ctx buf e)
+	| TTry(e1, catches) ->
+		write_byte buf 20;
+		write_texpr ctx buf e1;
+		List.iter (fun (tvar,e) ->
+			write_var ctx buf tvar;
+			write_texpr ctx buf e
+		) catches;
+		write_ui16 buf 0
+	| TReturn eopt ->
+		write_byte buf 21;
+		(match eopt with
+		| None -> write_byte buf 0
+		| Some e -> write_texpr ctx buf e)
+	| TBreak ->
+		write_byte buf 22;
+	| TContinue ->
+		write_byte buf 23;
+	| TThrow e ->
+		write_byte buf 24;
+		write_texpr ctx buf e
+	| TCast(e, mtopt) ->
+		write_byte buf 25;
+		(match mtopt with
+		| None ->
+			write_byte buf 0
+		| Some mt ->
+			write_module_type ctx buf mt)
+	| TMeta(meta, e) ->
+		write_byte buf 26;
+		write_meta_entry ctx buf meta;
+		write_texpr ctx buf e
+	| TEnumParameter(e, ef, nparam) ->
+		write_byte buf 27;
+		write_texpr ctx buf e;
+		write_string ctx buf ef.ef_name;
+		write_ui16 buf nparam
+
+and write_tfunc ctx buf tfunc =
+	List.iter (fun (v,copt) ->
+		write_var ctx buf v;
+		match copt with
+		| None -> write_byte buf 0
+		| Some constant -> write_tconstant ctx buf constant) tfunc.tf_args;
+	write_byte buf 0;
+	write_t ctx buf tfunc.tf_type;
+	write_texpr ctx buf tfunc.tf_expr
+
+(* no null tag *)
+and write_tparams ctx buf tparams =
+	List.iter (fun (s,t) ->
+		write_string ctx buf s;
+		write_t ctx buf t) tparams;
+	write_ui16 buf 0
+
+and nvar ctx tvar =
+	try
+		Hashtbl.find ctx.constants_tvar tvar.v_id
+	with | Not_found ->
+		let buf = IO.output_string() in
+		write_string ctx buf tvar.v_name;
+		write_t ctx buf tvar.v_type;
+		let flags = if tvar.v_capture then 1 else 0 in
+		let flags = match tvar.v_extra with
+			| None -> flags
+			| Some _ -> flags land 0x2
+		in
+		write_byte buf flags;
+		(match tvar.v_extra with
+		| None -> ()
+		| Some (tparams, topt) ->
+			write_tparams ctx buf tparams;
+			(match topt with
+			| None -> write_byte buf 0
+			| Some e -> write_texpr ctx buf e));
+		write_meta ctx buf tvar.v_meta;
+		write_pos ctx buf tvar.v_pos;
+		IO.write_string ctx.ctable (close_out buf);
+		let count = ctx.tcount in
+		ctx.tcount <- count + 1;
+		Hashtbl.replace ctx.constants_tvar tvar.v_id count;
+		count
+
+(* null tag: ui16 0 *)
+and write_var ctx buf tvar =
+	write_ui16 buf (nvar ctx tvar)
