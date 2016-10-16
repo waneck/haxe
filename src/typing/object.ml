@@ -31,7 +31,6 @@ let version = 1
 (* constant table entry *)
 type const_table =
 	| TblString of string
-	| TblPath of path
 	| TblModuleRef of path * string (* module.typeName *)
 	| TblType of t
 	| TblVar of tvar

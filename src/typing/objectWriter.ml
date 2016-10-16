@@ -162,6 +162,15 @@ let nmodule ctx (module_path, type_name) =
 let write_module ctx buf m =
 	write_ui16 buf (nmodule ctx m)
 
+let get_real_path path meta =
+	try
+		match Meta.get Meta.RealPath meta with
+		| (Meta.RealPath, [Ast.EConst (Ast.String (name)), _], _) ->
+			parse_path name
+		| _ -> raise Not_found
+	with | Not_found ->
+		path
+
 (* no null tag *)
 let write_pos ctx buf p =
 	if p.pfile = ctx.last_pos.pfile && abs (p.pmin - ctx.last_pos.pmax) < 128 && abs (p.pmax - p.pmin) < 128 then begin
@@ -240,16 +249,16 @@ let write_placed_name ctx buf (s,p) =
 let write_module_type ctx buf mt = match mt with
 	| TClassDecl c ->
 		write_byte buf 1;
-		write_module ctx buf (c.cl_module.m_path,snd c.cl_path);
+		write_module ctx buf (c.cl_module.m_path,snd (get_real_path c.cl_path c.cl_meta));
 	| TEnumDecl e ->
 		write_byte buf 2;
-		write_module ctx buf (e.e_module.m_path,snd e.e_path);
+		write_module ctx buf (e.e_module.m_path,snd (get_real_path e.e_path e.e_meta));
 	| TTypeDecl t ->
 		write_byte buf 3;
-		write_module ctx buf (t.t_module.m_path,snd t.t_path);
+		write_module ctx buf (t.t_module.m_path,snd (get_real_path t.t_path t.t_meta));
 	| TAbstractDecl a ->
 		write_byte buf 4;
-		write_module ctx buf (a.a_module.m_path,snd a.a_path)
+		write_module ctx buf (a.a_module.m_path,snd (get_real_path a.a_path a.a_meta))
 
 (* null tag: ui8 0 (from write_complex_type) *)
 let rec write_type_hint ctx buf (ct,p) =
@@ -575,7 +584,7 @@ let rec write_inplace_t ctx buf t =
 		end
 	| TEnum(e,params) ->
 		write_byte buf (Char.code 'E');
-		write_module ctx buf (e.e_module.m_path,snd e.e_path);
+		write_module ctx buf (e.e_module.m_path,snd (get_real_path e.e_path e.e_meta));
 		List.iter (fun p ->
 			write_t ctx buf p
 		) params;
@@ -599,14 +608,14 @@ let rec write_inplace_t ctx buf t =
 			write_t ctx buf (List.hd params)
 		| _ ->
 			write_byte buf (Char.code 'C');
-			write_module ctx buf (c.cl_module.m_path,snd c.cl_path);
+			write_module ctx buf (c.cl_module.m_path,snd (get_real_path c.cl_path c.cl_meta));
 			List.iter (fun p ->
 				write_t ctx buf p
 			) params;
 			write_byte buf 0)
 	| TType(t,params) ->
 		write_byte buf (Char.code 'T');
-		write_module ctx buf (t.t_module.m_path, snd t.t_path);
+		write_module ctx buf (t.t_module.m_path, snd (get_real_path t.t_path t.t_meta));
 		List.iter (fun p ->
 			write_t ctx buf p
 		) params;
@@ -637,15 +646,15 @@ let rec write_inplace_t ctx buf t =
 				true
 			| Statics c ->
 				write_byte buf 5;
-				write_module ctx buf (c.cl_module.m_path, snd c.cl_path);
+				write_module ctx buf (c.cl_module.m_path, snd (get_real_path c.cl_path c.cl_meta));
 				false
 			| EnumStatics e ->
 				write_byte buf 6;
-				write_module ctx buf (e.e_module.m_path, snd e.e_path);
+				write_module ctx buf (e.e_module.m_path, snd (get_real_path e.e_path e.e_meta));
 				false
 			| AbstractStatics a ->
 				write_byte buf 7;
-				write_module ctx buf (a.a_module.m_path, snd a.a_path);
+				write_module ctx buf (a.a_module.m_path, snd (get_real_path a.a_path a.a_meta));
 				false
 		in
 		if write_fields then begin
@@ -654,7 +663,7 @@ let rec write_inplace_t ctx buf t =
 		write_byte buf 0
 	| TAbstract(a,params) ->
 		write_byte buf (Char.code 'R');
-		write_module ctx buf (a.a_module.m_path, snd a.a_path);
+		write_module ctx buf (a.a_module.m_path, snd (get_real_path a.a_path a.a_meta));
 		List.iter (fun p ->
 			write_t ctx buf p
 		) params;
@@ -716,7 +725,7 @@ and write_tfield_access ctx buf = function
 		write_t ctx buf field.cf_type
 	| FStatic(c,field) ->
 		write_byte buf 2;
-		write_module ctx buf (c.cl_module.m_path,snd c.cl_path);
+		write_module ctx buf (c.cl_module.m_path,snd (get_real_path c.cl_path c.cl_meta));
 		write_string ctx buf field.cf_name;
 		write_tparams ctx buf field.cf_params;
 		write_t ctx buf field.cf_type
@@ -737,7 +746,7 @@ and write_tfield_access ctx buf = function
 		write_t ctx buf field.cf_type
 	| FEnum(e,ef) ->
 		write_byte buf 6;
-		write_module ctx buf (e.e_module.m_path,snd e.e_path);
+		write_module ctx buf (e.e_module.m_path,snd (get_real_path e.e_path e.e_meta));
 		write_string ctx buf ef.ef_name
 
 (* null tag: ui8 0 *)
@@ -921,3 +930,29 @@ and nvar ctx tvar =
 (* null tag: ui16 0 *)
 and write_var ctx buf tvar =
 	write_ui16 buf (nvar ctx tvar)
+
+(* let rec write_enum ctx buf e = *)
+(* 	let path = try *)
+(* 			match Meta.get Meta.RealPath e.e_meta with *)
+(* 			| (Meta.RealPath, [Ast.EConst (Ast.String (name)), _], _) -> *)
+(* 				parse_path name *)
+(* 			| _ -> raise Not_found *)
+(* 		with | Not_found -> *)
+(* 			e.e_path *)
+(* 	in *)
+(*  *)
+(* and tenum = { *)
+(* 	mutable e_path : path; *)
+(* 	e_module : module_def; *)
+(* 	e_pos : pos; *)
+(* 	e_name_pos : pos; *)
+(* 	e_private : bool; *)
+(* 	e_doc : Ast.documentation; *)
+(* 	mutable e_meta : metadata; *)
+(* 	mutable e_params : type_params; *)
+(* 	(* do not insert any fields above *) *)
+(* 	e_type : tdef; *)
+(* 	mutable e_extern : bool; *)
+(* 	mutable e_constrs : (string , tenum_field) PMap.t; *)
+(* 	mutable e_names : string list; *)
+(* } *)
