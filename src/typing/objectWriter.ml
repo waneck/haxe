@@ -236,6 +236,12 @@ let write_string ctx buf s =
 	write_ui16 buf (nstr ctx s)
 
 (* no null tag *)
+let write_path ctx buf (pack,name) =
+	List.iter (write_string ctx buf) pack;
+	write_ui16 buf 0;
+	write_string ctx buf name
+
+(* no null tag *)
 let write_doc ctx buf s = match s with
 	| None -> write_ui16 buf 0
 	| Some s -> write_string ctx buf s
@@ -606,13 +612,23 @@ let rec write_inplace_t ctx buf t =
 		| [], "Null" ->
 			write_byte buf (Char.code 'N');
 			write_t ctx buf (List.hd params)
-		| _ ->
-			write_byte buf (Char.code 'C');
-			write_module ctx buf (c.cl_module.m_path,snd (get_real_path c.cl_path c.cl_meta));
-			List.iter (fun p ->
-				write_t ctx buf p
-			) params;
-			write_byte buf 0)
+		| _ -> (match c.cl_kind with
+			| KTypeParameter tl ->
+				write_byte buf (Char.code 'P');
+				write_path ctx buf c.cl_path;
+				List.iter (write_t ctx buf) tl;
+				write_byte buf 0
+			| KExpr e ->
+				write_byte buf (Char.code 'e');
+				write_path ctx buf c.cl_path;
+				write_expr ctx buf e
+			| _ ->
+				write_byte buf (Char.code 'C');
+				write_module ctx buf (c.cl_module.m_path,snd (get_real_path c.cl_path c.cl_meta));
+				List.iter (fun p ->
+					write_t ctx buf p
+				) params;
+				write_byte buf 0))
 	| TType(t,params) ->
 		write_byte buf (Char.code 'T');
 		write_module ctx buf (t.t_module.m_path, snd (get_real_path t.t_path t.t_meta));
@@ -721,18 +737,18 @@ and write_tfield_access ctx buf = function
 		write_byte buf 1;
 		write_t ctx buf (TInst(c,tl));
 		write_string ctx buf field.cf_name;
-		write_tparams ctx buf field.cf_params;
+		write_type_params ctx buf field.cf_params;
 		write_t ctx buf field.cf_type
 	| FStatic(c,field) ->
 		write_byte buf 2;
 		write_module ctx buf (c.cl_module.m_path,snd (get_real_path c.cl_path c.cl_meta));
 		write_string ctx buf field.cf_name;
-		write_tparams ctx buf field.cf_params;
+		write_type_params ctx buf field.cf_params;
 		write_t ctx buf field.cf_type
 	| FAnon(field) ->
 		write_byte buf 3;
 		write_string ctx buf field.cf_name;
-		write_tparams ctx buf field.cf_params;
+		write_type_params ctx buf field.cf_params;
 		write_t ctx buf field.cf_type
 	| FDynamic(name) ->
 		write_byte buf 4;
@@ -893,7 +909,7 @@ and write_tfunc ctx buf tfunc =
 	write_texpr ctx buf tfunc.tf_expr
 
 (* no null tag *)
-and write_tparams ctx buf tparams =
+and write_type_params ctx buf tparams =
 	List.iter (fun (s,t) ->
 		write_string ctx buf s;
 		write_t ctx buf t) tparams;
@@ -915,7 +931,7 @@ and nvar ctx tvar =
 		(match tvar.v_extra with
 		| None -> ()
 		| Some (tparams, topt) ->
-			write_tparams ctx buf tparams;
+			write_type_params ctx buf tparams;
 			(match topt with
 			| None -> write_byte buf 0
 			| Some e -> write_texpr ctx buf e));
@@ -931,28 +947,183 @@ and nvar ctx tvar =
 and write_var ctx buf tvar =
 	write_ui16 buf (nvar ctx tvar)
 
-(* let rec write_enum ctx buf e = *)
-(* 	let path = try *)
-(* 			match Meta.get Meta.RealPath e.e_meta with *)
-(* 			| (Meta.RealPath, [Ast.EConst (Ast.String (name)), _], _) -> *)
-(* 				parse_path name *)
-(* 			| _ -> raise Not_found *)
-(* 		with | Not_found -> *)
-(* 			e.e_path *)
-(* 	in *)
-(*  *)
-(* and tenum = { *)
-(* 	mutable e_path : path; *)
-(* 	e_module : module_def; *)
-(* 	e_pos : pos; *)
-(* 	e_name_pos : pos; *)
-(* 	e_private : bool; *)
-(* 	e_doc : Ast.documentation; *)
-(* 	mutable e_meta : metadata; *)
-(* 	mutable e_params : type_params; *)
+let write_enum_field ctx buf ef =
+	write_string ctx buf ef.ef_name;
+	write_t ctx buf ef.ef_type;
+	write_pos ctx buf ef.ef_pos;
+	write_pos ctx buf ef.ef_name_pos;
+	write_doc ctx buf ef.ef_doc;
+	write_i32 buf ef.ef_index;
+	write_type_params ctx buf ef.ef_params;
+	write_meta ctx buf ef.ef_meta
+
+let write_enum ctx buf e =
+	write_byte buf (Char.code '*');
+	write_byte buf (Char.code 'E');
+	let (pack, name) = get_real_path e.e_path e.e_meta in
+	write_module ctx buf (e.e_module.m_path,name);
+	write_pos ctx buf e.e_pos;
+	write_pos ctx buf e.e_name_pos;
+	let flags = if e.e_private then 1 else 0 in
+	let flags = if e.e_extern then flags land 0x2 else flags in
+	write_doc ctx buf e.e_doc;
+	write_meta ctx buf e.e_meta;
+	write_type_params ctx buf e.e_params;
+	write_ui16 buf (List.length e.e_names);
+	List.iter (fun name ->
+		let constr = PMap.find name e.e_constrs in
+		write_enum_field ctx buf constr) e.e_names;
+	write_byte buf (Char.code '$');
+
+let write_tdef ctx buf tdef =
+	write_byte buf (Char.code '*');
+	write_byte buf (Char.code 'T');
+	let (pack, name) = get_real_path tdef.t_path tdef.t_meta in
+	write_pos ctx buf tdef.t_pos;
+	write_pos ctx buf tdef.t_name_pos;
+	write_byte buf (if tdef.t_private then 1 else 0);
+	write_doc ctx buf tdef.t_doc;
+	write_meta ctx buf tdef.t_meta;
+	write_type_params ctx buf tdef.t_params;
+	write_t ctx buf tdef.t_type;
+	write_byte buf (Char.code '$');
+
+let write_tabstract ctx buf a =
+	let write_field_ref cf =
+		write_string ctx buf cf.cf_name;
+		write_type_params ctx buf cf.cf_params;
+		write_t ctx buf cf.cf_type
+	in
+	write_byte buf (Char.code '*');
+	write_byte buf (Char.code 'A');
+	let (pack, name) = get_real_path a.a_path a.a_meta in
+	write_pos ctx buf a.a_pos;
+	write_pos ctx buf a.a_name_pos;
+	write_byte buf (if a.a_private then 1 else 0);
+	write_doc ctx buf a.a_doc;
+	write_meta ctx buf a.a_meta;
+	write_type_params ctx buf a.a_params;
+	List.iter (fun (binop,cf) ->
+		write_byte buf (binop_code binop);
+		write_field_ref cf
+	) a.a_ops;
+	write_byte buf 0;
+	List.iter (fun (unop,cf) ->
+		write_byte buf (unop_code binop);
+		write_field_ref cf
+	) a.a_unops;
+	write_byte buf 0;
+	(match a.a_impl with
+	| None -> write_ui16 buf 0
+	| Some c ->
+		write_module ctx buf (c.cl_module.m_path,snd (get_real_path c.cl_path c.cl_meta)));
+	write_t ctx buf a.a_this;
+	List.iter (write_t ctx buf) a.a_from;
+	write_ui16 buf 0;
+	List.iter (fun (t,cf) ->
+		write_t ctx buf t;
+		write_field_ref cf) a.a_from_field;
+	write_ui16 buf 0;
+	List.iter (write_t ctx buf) a.a_to;
+	write_ui16 buf 0;
+	List.iter (fun (t,cf) ->
+		write_t ctx buf t;
+		write_field_ref cf) a.a_to_field;
+	write_ui16 buf 0;
+	List.iter (write_field_ref) a.a_array;
+	write_ui16 buf 0;
+	(match a.a_resolve with
+	| None -> write_ui16 buf 0
+	| Some cf -> write_field_ref cf);
+	write_byte buf (Char.code '$')
+
+(* and tclass = { *)
+(* 	mutable cl_path : path; *)
+(* 	mutable cl_module : module_def; *)
+(* 	mutable cl_pos : pos; *)
+(* 	mutable cl_name_pos : pos; *)
+(* 	mutable cl_private : bool; *)
+(* 	mutable cl_doc : Ast.documentation; *)
+(* 	mutable cl_meta : metadata; *)
+(* 	mutable cl_params : type_params; *)
 (* 	(* do not insert any fields above *) *)
-(* 	e_type : tdef; *)
-(* 	mutable e_extern : bool; *)
-(* 	mutable e_constrs : (string , tenum_field) PMap.t; *)
-(* 	mutable e_names : string list; *)
+(* 	mutable cl_kind : tclass_kind; *)
+(* 	mutable cl_extern : bool; *)
+(* 	mutable cl_interface : bool; *)
+(* 	mutable cl_super : (tclass * tparams) option; *)
+(* 	mutable cl_implements : (tclass * tparams) list; *)
+(* 	mutable cl_fields : (string , tclass_field) PMap.t; *)
+(* 	mutable cl_statics : (string, tclass_field) PMap.t; *)
+(* 	mutable cl_ordered_statics : tclass_field list; *)
+(* 	mutable cl_ordered_fields : tclass_field list; *)
+(* 	mutable cl_dynamic : t option; *)
+(* 	mutable cl_array_access : t option; *)
+(* 	mutable cl_constructor : tclass_field option; *)
+(* 	mutable cl_init : texpr option; *)
+(* 	mutable cl_overrides : tclass_field list; *)
+(*  *)
+(* 	mutable cl_build : unit -> build_state; *)
+(* 	mutable cl_restore : unit -> unit; *)
 (* } *)
+(* and tclass_field = { *)
+(* 	mutable cf_name : string; *)
+(* 	mutable cf_type : t; *)
+(* 	mutable cf_public : bool; *)
+(* 	cf_pos : pos; *)
+(* 	cf_name_pos : pos; *)
+(* 	mutable cf_doc : Ast.documentation; *)
+(* 	mutable cf_meta : metadata; *)
+(* 	mutable cf_kind : field_kind; *)
+(* 	mutable cf_params : type_params; *)
+(* 	mutable cf_expr : texpr option; *)
+(* 	mutable cf_expr_unoptimized : tfunc option; *)
+(* 	mutable cf_overloads : tclass_field list; *)
+(* } *)
+
+let write_class_field ctx buf is_override cf =
+	write_string ctx buf cf.cf_name;
+	write_t ctx buf cf.cf_type;
+	let flags = if cf.cf_public then 0x1 else 0x0 in
+	let flags = if is_override then flags land 0x2 else flags in
+	write_byte buf flags;
+	write_pos ctx buf cf.cf_pos;
+	write_pos ctx buf cf.cf_name_pos;
+	write_doc ctx buf cf.cf_doc;
+	write_meta ctx buf cf.cf_meta;
+	write_type_params ctx buf cf.cf_params;
+	(match cf.cf_expr with
+	| None -> write_ui16 buf 0
+	| Some e ->
+		let exprbuf = IO.output_string() in
+		write_texpr ctx exprbuf e;
+		(match cf.cf_expr_unoptimized with
+		| None -> write_ui16 exprbuf 0
+		| Some tf -> write_tfunc ctx exprbuf tf);
+		let str = close_out buf;
+		write_ui16 buf (String.length str);
+		IO.write_string buf str)
+
+
+let write_tclass ctx buf c =
+	write_byte buf (Char.code '*');
+	write_byte buf (Char.code 'C');
+	let (pack, name) = get_real_path c.cl_path c.cl_meta in
+	write_pos ctx buf c.cl_pos;
+	write_pos ctx buf c.cl_name_pos;
+	write_byte buf (if c.cl_private then 1 else 0);
+	write_doc ctx buf c.cl_doc;
+	write_meta ctx buf c.cl_meta;
+	write_type_params ctx buf c.cl_params;
+	(match c.cl_kind with
+	| KNormal -< write_byte buf 1
+	| KGeneric -> write_byte buf 2
+	| KGenericInstance(c,tl) ->
+			write_byte buf 3;
+			write_t ctx buf (TInst(c,tl))
+	| KMacroType ->
+			write_byte buf 4
+	| KGenericBuild(cfl) ->
+			write_byte buf 5;
+	| KAbstractImpl a ->
+	| KTypeParameter _ | KExpr _ -> assert false);
+	()
