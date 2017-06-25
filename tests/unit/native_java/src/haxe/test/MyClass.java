@@ -87,7 +87,14 @@ public class MyClass
 
 	public void normalOverload(Base a)
 	{
-		
+	}
+
+	public String nullableOverload(Long a) {
+		return (a == null ? "nullLong" : "Long");
+	}
+
+	public String nullableOverload(Integer b) {
+		return (b == null ? "nullInteger" : "Integer");
 	}
 
 	static public class InnerName1$

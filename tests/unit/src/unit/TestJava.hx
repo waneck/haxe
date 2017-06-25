@@ -29,10 +29,18 @@ class TestJava extends Test
 	catch(e:Dynamic) throw e; //shouldn't throw any exception
   }
 
+	public function testIssue3972() {
+		var cl = new MyClass();
+		var i:Int = 10;
+		eq( cl.nullableOverload(i), "Integer" );
+		var i64:java.StdTypes.Int64 = 10;
+		eq( cl.nullableOverload(i64), "Long" );
+	}
+
 	public function testIssue2964()
 	{
 		var cl = new MyClass();
-		var bbool:java.lang.Boolean = null;
+		var bbool:Null<Bool> = null;
 		eq(cl.boolTest1(bbool), 100);
 		eq(cl.boolTest1(true), true);
 		eq(cl.boolTest1(false), false);
@@ -44,10 +52,10 @@ class TestJava extends Test
 		eq(cl.boolTest2(true), 1);
 		eq(cl.boolTest2(false), 0);
 
-		var i:java.lang.Integer = null;
+		var i:Null<Int> = null;
 		eq(cl.intTest1(i), 100);
-		eq(cl.intTest1(cast(-1, java.lang.Integer)),-1);
-		eq(cl.intTest1(cast(1000, java.lang.Integer)),1000);
+		eq(cl.intTest1(-1),-1);
+		eq(cl.intTest1(1000),1000);
 		i = -1;
 		eq(cl.intTest1(i), -1);
 		i = null;
@@ -57,7 +65,7 @@ class TestJava extends Test
 		i = -1;
 		eq(cl.intTest2(i), -1);
 
-		var i:java.lang.Long = null;
+		var i:Null<java.StdTypes.Int64> = null;
 		eq(cl.longTest(i), 100);
 		eq(cl.longTest(haxe.Int64.ofInt(-1)),-1);
 		eq(cl.longTest(haxe.Int64.ofInt(1000)),1000);
